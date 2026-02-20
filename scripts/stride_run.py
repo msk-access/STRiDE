@@ -19,7 +19,11 @@ def main():
 
     p.add_argument("--min-coverage", type=int, default=20)
     p.add_argument("--max-repeat-bins", type=int, default=100)
-    p.add_argument("--keep-features", action="store_true", help="Keep generated feature TSVs (default: removed).")
+    p.add_argument(
+        "--delete-features",
+        action="store_true",
+        help="Delete generated feature TSVs after prediction (default: keep)."
+    )
     args = p.parse_args()
 
     if args.samples_list:
@@ -30,7 +34,7 @@ def main():
             out_dir=args.out_dir,
             min_coverage=args.min_coverage,
             max_repeat_bins=args.max_repeat_bins,
-            keep_features=args.keep_features
+            keep_features=not args.delete_features
         )
         print(f"Completed batch for {len(results)} samples.")
         for r in results:
@@ -50,7 +54,7 @@ def main():
         sample_id=args.sample_id,
         min_coverage=args.min_coverage,
         max_repeat_bins=args.max_repeat_bins,
-        keep_features=args.keep_features
+        keep_features=not args.delete_features
     )
     print(f"Completed sample {res['sample_id']}")
     print(res["prediction_txt"])
