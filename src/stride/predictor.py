@@ -1,10 +1,11 @@
-import os
 import glob
 import logging
+import os
+from typing import Any, Optional
+
 import joblib
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, List, Any, Tuple
 
 from .utils import safe_name
 
@@ -13,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 META_IGNORE_COLS = {"chrom", "chr", "start", "end", "ref", "alt", "site_id", "label", "sample_id"}
 
-def extract_all_features_from_tsv(file_path: str) -> Optional[Dict[str, float]]:
+
+def extract_all_features_from_tsv(file_path: str) -> Optional[dict[str, float]]:
     try:
         if os.path.getsize(file_path) == 0:
             logger.warning("Skipping empty file: %s", file_path)
@@ -26,7 +28,7 @@ def extract_all_features_from_tsv(file_path: str) -> Optional[Dict[str, float]]:
         df["site_id"] = df[chrom_col].astype(str) + "_" + df["start"].astype(str)
 
         metric_cols = [c for c in df.columns if c not in META_IGNORE_COLS]
-        feats: Dict[str, float] = {}
+        feats: dict[str, float] = {}
         for _, row in df.iterrows():
             site = row["site_id"]
             for m in metric_cols:
@@ -36,12 +38,11 @@ def extract_all_features_from_tsv(file_path: str) -> Optional[Dict[str, float]]:
         logger.error("Error reading file %s: %s", file_path, e)
         return None
 
+
 def gather_samples_from_inputs(
-    samples_dir: Optional[str],
-    sample_files: Optional[List[str]],
-    list_file: Optional[str]
-) -> Tuple[List[str], Dict[str, Dict[str, float]]]:
-    tsvs: List[str] = []
+    samples_dir: Optional[str], sample_files: Optional[list[str]], list_file: Optional[str]
+) -> tuple[list[str], dict[str, dict[str, float]]]:
+    tsvs: list[str] = []
 
     if samples_dir:
         tsvs.extend(glob.glob(os.path.join(samples_dir, "**", "*.tsv"), recursive=True))
@@ -50,7 +51,7 @@ def gather_samples_from_inputs(
         tsvs.extend(sample_files)
 
     if list_file:
-        with open(list_file, "r") as f:
+        with open(list_file) as f:
             for ln in f:
                 p = ln.strip()
                 if p:
@@ -68,14 +69,14 @@ def gather_samples_from_inputs(
     if not tsvs:
         raise FileNotFoundError("No .tsv sample files found.")
 
-    feature_bag: Dict[str, Dict[str, float]] = {}
-    sample_ids: List[str] = []
+    feature_bag: dict[str, dict[str, float]] = {}
+    sample_ids: list[str] = []
 
     for fp in tsvs:
         fn = os.path.basename(fp)
         sample_id = os.path.splitext(fn)[0]
         if sample_id.startswith("msi_features_"):
-            sample_id = sample_id[len("msi_features_"):]
+            sample_id = sample_id[len("msi_features_") :]
         sample_id = sample_id.strip()
 
         feats = extract_all_features_from_tsv(fp)
@@ -89,6 +90,7 @@ def gather_samples_from_inputs(
     if not sample_ids:
         raise RuntimeError("No valid sample TSVs could be parsed.")
     return sample_ids, feature_bag
+
 
 def unwrap_model(obj: Any):
     from sklearn.pipeline import Pipeline
@@ -107,6 +109,7 @@ def unwrap_model(obj: Any):
             except Exception:
                 return None
     return None
+
 
 def get_expected_features(model) -> np.ndarray:
     scaler = None
@@ -130,13 +133,17 @@ def get_expected_features(model) -> np.ndarray:
 
     raise ValueError("Cannot determine expected feature names from the model/scaler.")
 
-def build_matrix(sample_ids: List[str], feature_bag: Dict[str, Dict[str, float]], expected_features: np.ndarray) -> pd.DataFrame:
+
+def build_matrix(
+    sample_ids: list[str], feature_bag: dict[str, dict[str, float]], expected_features: np.ndarray
+) -> pd.DataFrame:
     rows = []
     for sid in sample_ids:
         feats = feature_bag.get(sid, {})
         row = {k: feats.get(k, 0.0) for k in expected_features}
         rows.append(row)
     return pd.DataFrame(rows, index=sample_ids)
+
 
 def get_scores(model, X: pd.DataFrame) -> np.ndarray:
     try:
@@ -159,6 +166,7 @@ def get_scores(model, X: pd.DataFrame) -> np.ndarray:
 
     return np.full((X.shape[0],), np.nan, dtype=float)
 
+
 def load_model(model_joblib: str):
     raw = joblib.load(model_joblib)
     model = unwrap_model(raw)
@@ -166,7 +174,8 @@ def load_model(model_joblib: str):
         raise ValueError("Unsupported model object: not a Pipeline (or dict containing one).")
     return model
 
-def predict_from_feature_tsvs(model_joblib: str, feature_tsvs: List[str]) -> pd.DataFrame:
+
+def predict_from_feature_tsvs(model_joblib: str, feature_tsvs: list[str]) -> pd.DataFrame:
     model = load_model(model_joblib)
     expected = get_expected_features(model)
 
@@ -175,13 +184,12 @@ def predict_from_feature_tsvs(model_joblib: str, feature_tsvs: List[str]) -> pd.
     y_pred = np.asarray(model.predict(X)).astype(int)
     scores = np.asarray(get_scores(model, X), dtype=float)
 
-    return pd.DataFrame({
-        "Sample_ID": sample_ids,
-        "MSI_class_predicted": y_pred,
-        "msi_score": np.round(scores, 6)
-    })
+    return pd.DataFrame(
+        {"Sample_ID": sample_ids, "MSI_class_predicted": y_pred, "msi_score": np.round(scores, 6)}
+    )
 
-def write_one_output_per_sample(df_preds: pd.DataFrame, out_dir: str) -> List[str]:
+
+def write_one_output_per_sample(df_preds: pd.DataFrame, out_dir: str) -> list[str]:
     os.makedirs(out_dir, exist_ok=True)
     written = []
     for _, row in df_preds.iterrows():

@@ -12,7 +12,7 @@ to ensure BAM file handles are released promptly.
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Optional
 
 from .feature_generator import MSIProfileGenerator
 from .predictor import predict_from_feature_tsvs, write_one_output_per_sample
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Feature generation (single sample)
 # ---------------------------------------------------------------------------
+
 
 def run_feature_generation(
     sites_file: str,
@@ -55,6 +56,7 @@ def run_feature_generation(
 # End-to-end: single sample
 # ---------------------------------------------------------------------------
 
+
 def run_end_to_end_single(
     sites_file: str,
     tumor_bam: str,
@@ -65,7 +67,7 @@ def run_end_to_end_single(
     min_coverage: int = 20,
     max_repeat_bins: int = 100,
     keep_features: bool = True,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Run the full pipeline for a single sample.
 
     Returns a dict with keys ``sample_id``, ``features_tsv``, and
@@ -84,8 +86,12 @@ def run_end_to_end_single(
     feat_tsv = os.path.join(features_dir, f"msi_features_{safe_name(sid)}.tsv")
 
     run_feature_generation(
-        sites_file, tumor_bam, normal_bam, feat_tsv,
-        min_coverage=min_coverage, max_repeat_bins=max_repeat_bins,
+        sites_file,
+        tumor_bam,
+        normal_bam,
+        feat_tsv,
+        min_coverage=min_coverage,
+        max_repeat_bins=max_repeat_bins,
     )
 
     df_preds = predict_from_feature_tsvs(model_joblib, [feat_tsv])
@@ -105,6 +111,7 @@ def run_end_to_end_single(
 # End-to-end: batch
 # ---------------------------------------------------------------------------
 
+
 def run_end_to_end_batch(
     samples_list_path: str,
     sites_file: str,
@@ -113,7 +120,7 @@ def run_end_to_end_batch(
     min_coverage: int = 20,
     max_repeat_bins: int = 100,
     keep_features: bool = True,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """Run the full pipeline for every sample in a manifest file.
 
     Returns a list of dicts (one per sample), each containing
@@ -121,7 +128,7 @@ def run_end_to_end_batch(
     """
     os.makedirs(out_dir, exist_ok=True)
 
-    samples: List[Dict[str, str]] = read_samples_list(samples_list_path)
+    samples: list[dict[str, str]] = read_samples_list(samples_list_path)
     logger.info("Loaded %d samples from %s", len(samples), samples_list_path)
 
     features_dir = os.path.join(out_dir, "features")
@@ -130,16 +137,20 @@ def run_end_to_end_batch(
     os.makedirs(preds_dir, exist_ok=True)
 
     # 1) Generate feature TSV per sample
-    feature_tsvs: List[str] = []
-    sample_ids: List[str] = []
+    feature_tsvs: list[str] = []
+    sample_ids: list[str] = []
     for i, s in enumerate(samples, 1):
         sid = s["sample_id"]
         logger.info("[%d/%d] Generating features for %s", i, len(samples), sid)
 
         feat_tsv = os.path.join(features_dir, f"msi_features_{safe_name(sid)}.tsv")
         run_feature_generation(
-            sites_file, s["tumor_bam"], s["normal_bam"], feat_tsv,
-            min_coverage=min_coverage, max_repeat_bins=max_repeat_bins,
+            sites_file,
+            s["tumor_bam"],
+            s["normal_bam"],
+            feat_tsv,
+            min_coverage=min_coverage,
+            max_repeat_bins=max_repeat_bins,
         )
         feature_tsvs.append(feat_tsv)
         sample_ids.append(sid)
@@ -159,14 +170,16 @@ def run_end_to_end_batch(
         logger.debug("Removed %d intermediate feature TSV(s)", len(feature_tsvs))
 
     # 4) Map outputs back to sample_id
-    results: List[Dict[str, str]] = []
+    results: list[dict[str, str]] = []
     pred_map = {os.path.basename(p).replace("_msi.txt", ""): p for p in out_paths}
     for sid, feat in zip(sample_ids, feature_tsvs):
-        results.append({
-            "sample_id": sid,
-            "features_tsv": feat,
-            "prediction_txt": pred_map.get(safe_name(sid), ""),
-        })
+        results.append(
+            {
+                "sample_id": sid,
+                "features_tsv": feat,
+                "prediction_txt": pred_map.get(safe_name(sid), ""),
+            }
+        )
 
     logger.info("Batch complete — %d samples processed", len(results))
     return results

@@ -56,6 +56,7 @@ def main(
 # stride features
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def features(
     tumor_bam: str = typer.Option(..., "--tumor-bam", help="Path to tumor BAM file."),
@@ -112,6 +113,7 @@ def features(
 # stride predict
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def predict(
     model_joblib: Optional[str] = typer.Option(
@@ -134,11 +136,11 @@ def predict(
     from rich.table import Table
 
     from .predictor import (
-        gather_samples_from_inputs,
-        load_model,
-        get_expected_features,
         build_matrix,
+        gather_samples_from_inputs,
+        get_expected_features,
         get_scores,
+        load_model,
         write_one_output_per_sample,
     )
 
@@ -155,9 +157,11 @@ def predict(
             sample_files=feature_files,
             list_file=list_file,
         )
-    except FileNotFoundError:
-        logger.error("No feature TSV files found. Provide --features-dir, --feature-files, or --list-file.")
-        raise typer.Exit(code=1)
+    except FileNotFoundError as err:
+        logger.error(
+            "No feature TSV files found. Provide --features-dir, --feature-files, or --list-file."
+        )
+        raise typer.Exit(code=1) from err
 
     logger.info("Found %d sample(s)", len(sample_ids))
 
@@ -171,11 +175,13 @@ def predict(
     y_pred = np.asarray(model.predict(X)).astype(int)
     scores = np.asarray(get_scores(model, X), dtype=float)
 
-    df_preds = pd.DataFrame({
-        "Sample_ID": sample_ids,
-        "MSI_class_predicted": y_pred,
-        "msi_score": np.round(scores, 6),
-    })
+    df_preds = pd.DataFrame(
+        {
+            "Sample_ID": sample_ids,
+            "MSI_class_predicted": y_pred,
+            "msi_score": np.round(scores, 6),
+        }
+    )
     paths = write_one_output_per_sample(df_preds, out_dir)
 
     # Display a Rich summary table
@@ -187,7 +193,9 @@ def predict(
     for _, row in df_preds.iterrows():
         pred_label = "MSI-H" if int(row["MSI_class_predicted"]) == 1 else "MSS"
         style = "red bold" if pred_label == "MSI-H" else "green"
-        table.add_row(str(row["Sample_ID"]), f"[{style}]{pred_label}[/{style}]", f"{row['msi_score']:.6f}")
+        table.add_row(
+            str(row["Sample_ID"]), f"[{style}]{pred_label}[/{style}]", f"{row['msi_score']:.6f}"
+        )
 
     console.print(table)
     logger.info("Wrote %d prediction file(s) to %s", len(paths), out_dir)
@@ -196,6 +204,7 @@ def predict(
 # ---------------------------------------------------------------------------
 # stride run
 # ---------------------------------------------------------------------------
+
 
 @app.command()
 def run(

@@ -2,16 +2,14 @@
 
 import os
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from stride.predictor import extract_all_features_from_tsv, write_one_output_per_sample
-
 
 # ---------------------------------------------------------------------------
 # extract_all_features_from_tsv
 # ---------------------------------------------------------------------------
+
 
 class TestExtractFeatures:
     """Verify per-site feature flattening from TSV."""
@@ -40,15 +38,18 @@ class TestExtractFeatures:
 # write_one_output_per_sample
 # ---------------------------------------------------------------------------
 
+
 class TestWriteOutput:
     """Verify per-sample prediction output writing."""
 
     def test_writes_files(self, tmp_dir):
-        df = pd.DataFrame({
-            "Sample_ID": ["S1", "S2"],
-            "MSI_class_predicted": [0, 1],
-            "msi_score": [0.123, 0.987],
-        })
+        df = pd.DataFrame(
+            {
+                "Sample_ID": ["S1", "S2"],
+                "MSI_class_predicted": [0, 1],
+                "msi_score": [0.123, 0.987],
+            }
+        )
         paths = write_one_output_per_sample(df, tmp_dir)
         assert len(paths) == 2
         for p in paths:
@@ -56,11 +57,13 @@ class TestWriteOutput:
             assert p.endswith("_msi.txt")
 
     def test_output_content(self, tmp_dir):
-        df = pd.DataFrame({
-            "Sample_ID": ["TestSample"],
-            "MSI_class_predicted": [1],
-            "msi_score": [0.5],
-        })
+        df = pd.DataFrame(
+            {
+                "Sample_ID": ["TestSample"],
+                "MSI_class_predicted": [1],
+                "msi_score": [0.5],
+            }
+        )
         paths = write_one_output_per_sample(df, tmp_dir)
         result = pd.read_csv(paths[0], sep="\t")
         assert result["MSI_class_predicted"].iloc[0] == 1
@@ -68,11 +71,13 @@ class TestWriteOutput:
 
     def test_creates_output_dir(self, tmp_dir):
         nested = os.path.join(tmp_dir, "nested", "dir")
-        df = pd.DataFrame({
-            "Sample_ID": ["S1"],
-            "MSI_class_predicted": [0],
-            "msi_score": [0.1],
-        })
+        df = pd.DataFrame(
+            {
+                "Sample_ID": ["S1"],
+                "MSI_class_predicted": [0],
+                "msi_score": [0.1],
+            }
+        )
         paths = write_one_output_per_sample(df, nested)
         assert os.path.isdir(nested)
         assert len(paths) == 1
