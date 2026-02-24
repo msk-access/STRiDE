@@ -1,10 +1,17 @@
 """Tests for stride CLI — version, help, sub-command structure."""
 
+import re
+
 from typer.testing import CliRunner
 
 from stride.cli import app
 
 runner = CliRunner()
+
+
+def _strip(text: str) -> str:
+    """Remove ANSI escape codes for clean string matching."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 class TestCLIBasics:
@@ -13,19 +20,19 @@ class TestCLIBasics:
     def test_version(self):
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "stride 0.1.0" in result.output
+        assert "stride 0.1.0" in _strip(result.output)
 
     def test_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "features" in result.output
-        assert "predict" in result.output
-        assert "run" in result.output
+        assert "features" in _strip(result.output)
+        assert "predict" in _strip(result.output)
+        assert "run" in _strip(result.output)
 
     def test_no_args_shows_help(self):
         """Typer with no_args_is_help returns exit code 0 or 2 and shows Usage."""
         result = runner.invoke(app, [])
-        assert "Usage" in result.output
+        assert "Usage" in _strip(result.output)
 
 
 class TestFeaturesCommand:
@@ -34,10 +41,11 @@ class TestFeaturesCommand:
     def test_help(self):
         result = runner.invoke(app, ["features", "--help"])
         assert result.exit_code == 0
-        assert "--tumor-bam" in result.output
-        assert "--normal-bam" in result.output
-        assert "--site-list" in result.output
-        assert "--verbose" in result.output
+        out = _strip(result.output)
+        assert "--tumor-bam" in out
+        assert "--normal-bam" in out
+        assert "--site-list" in out
+        assert "--verbose" in out
 
     def test_requires_tumor_and_normal(self):
         result = runner.invoke(app, ["features"])
@@ -50,9 +58,10 @@ class TestPredictCommand:
     def test_help(self):
         result = runner.invoke(app, ["predict", "--help"])
         assert result.exit_code == 0
-        assert "--model-joblib" in result.output
-        assert "--features-dir" in result.output
-        assert "--out-dir" in result.output
+        out = _strip(result.output)
+        assert "--model-joblib" in out
+        assert "--features-dir" in out
+        assert "--out-dir" in out
 
     def test_requires_out_dir(self):
         result = runner.invoke(app, ["predict"])
@@ -65,10 +74,11 @@ class TestRunCommand:
     def test_help(self):
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
-        assert "--tumor-bam" in result.output
-        assert "--samples-list" in result.output
-        assert "--model-joblib" in result.output
-        assert "--delete-features" in result.output
+        out = _strip(result.output)
+        assert "--tumor-bam" in out
+        assert "--samples-list" in out
+        assert "--model-joblib" in out
+        assert "--delete-features" in out
 
     def test_requires_out_dir(self):
         result = runner.invoke(app, ["run"])
