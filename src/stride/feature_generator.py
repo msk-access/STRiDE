@@ -4,8 +4,8 @@ import logging
 from datetime import datetime
 from scipy.stats import chi2_contingency, entropy, wasserstein_distance
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("MSIProfileGenerator")
+# Module logger — configured by the CLI layer via utils.setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class MSIProfileGenerator:
@@ -17,6 +17,24 @@ class MSIProfileGenerator:
         self.max_repeat_bins = max_repeat_bins
         self.tumor_bam = pysam.AlignmentFile(self.tumor_bam_path, "rb")
         self.normal_bam = pysam.AlignmentFile(self.normal_bam_path, "rb")
+
+    # -- Context manager to prevent BAM file handle leaks -----------------
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close BAM file handles on exit."""
+        self.close()
+        return False
+
+    def close(self):
+        """Explicitly close the underlying BAM file handles."""
+        for bam in (self.tumor_bam, self.normal_bam):
+            try:
+                bam.close()
+            except Exception:
+                pass
 
     def parse_sites(self):
         with open(self.sites_file, 'r') as f:
@@ -182,10 +200,42 @@ class MSIProfileGenerator:
         return 0
 
     def run(self, output_tsv):
+        """Analyze all sites and write feature TSV.
+
+        Uses a Rich progress bar to show real-time processing status.
+        Logs a summary of sites analyzed, skipped, and total time.
+        """
+        from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+
         logger.info("Starting MSI analysis...")
         start_time = datetime.now()
 
-        results = [self.analyze_site(site) for site in self.parse_sites()]
+        # Pre-read sites so we can show accurate progress
+        sites = list(self.parse_sites())
+        total_sites = len(sites)
+        logger.info("Loaded %d sites from %s", total_sites, self.sites_file)
+
+        results = []
+        analyzed = 0
+        skipped = 0
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total})"),
+            TimeElapsedColumn(),
+        ) as progress:
+            task = progress.add_task("Analyzing sites", total=total_sites)
+            for site in sites:
+                result = self.analyze_site(site)
+                if result is not None:
+                    results.append(result)
+                    analyzed += 1
+                else:
+                    skipped += 1
+                progress.advance(task)
 
         header = [
             "chrom", "start", "unit_len", "repeat_unit", "repeat_count", "left_flank", "right_flank",
@@ -205,7 +255,7 @@ class MSIProfileGenerator:
 
         with open(output_tsv, 'w') as out_file:
             out_file.write("\t".join(header) + "\n")
-            for result in filter(None, results):
+            for result in results:
                 line = [
                     result["chrom"], str(result["start"]), str(result["unit_len"]), result["repeat_unit"],
                     str(result["repeat_count"]), result["left_flank"], result["right_flank"],
@@ -228,5 +278,9 @@ class MSIProfileGenerator:
                 assert len(header) == len(line), "Mismatch between header and output columns"
                 out_file.write("\t".join(line) + "\n")
 
-        end_time = datetime.now()
-        logger.info(f"MSI analysis completed in {end_time - start_time}.")
+        elapsed = datetime.now() - start_time
+        logger.info(
+            "MSI analysis complete: %d analyzed, %d skipped, %d total in %s",
+            analyzed, skipped, total_sites, elapsed,
+        )
+
