@@ -121,15 +121,15 @@ class MSIProfileGenerator:
             tumor_entropy_val = shannon_entropy(tumor_freq)
             normal_entropy_val = shannon_entropy(normal_freq)
 
-            tumor_total = np.sum(tumor_freq)
-            normal_total = np.sum(normal_freq)
+            tumor_total: float = np.sum(tumor_freq)
+            normal_total: float = np.sum(normal_freq)
 
             norm_tumor = tumor_freq / tumor_total if tumor_total > 0 else np.zeros_like(tumor_freq)
             norm_normal = (
                 normal_freq / normal_total if normal_total > 0 else np.zeros_like(normal_freq)
             )
 
-            l1_dist = np.sum(np.abs(norm_tumor - norm_normal))
+            l1_dist: float = np.sum(np.abs(norm_tumor - norm_normal))
             l2_dist = np.sqrt(np.sum((norm_tumor - norm_normal) ** 2))
             wass_dist = wasserstein_distance(norm_tumor, norm_normal)
 
@@ -140,7 +140,7 @@ class MSIProfileGenerator:
                 for thresh in allele_thresholds
             }
 
-            norm_allele_diffs = {
+            norm_allele_diffs: dict[str, float] = {
                 f"n_alleles_diff_norm_{int(thresh * 100)}": np.sum(norm_tumor >= thresh)
                 - np.sum(norm_normal >= thresh)
                 for thresh in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06]

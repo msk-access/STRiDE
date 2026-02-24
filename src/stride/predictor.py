@@ -118,18 +118,18 @@ def get_expected_features(model) -> np.ndarray:
 
     if scaler is not None:
         if hasattr(scaler, "feature_names_in_"):
-            return scaler.feature_names_in_
+            return np.asarray(scaler.feature_names_in_)  # type: ignore[no-any-return]
         if hasattr(scaler, "get_feature_names_out"):
-            return scaler.get_feature_names_out()
+            return np.asarray(scaler.get_feature_names_out())  # type: ignore[no-any-return]
 
     for part in ("sgdclassifier", "svc", "svm", "estimator", "linearsvc"):
         if hasattr(model, "named_steps") and part in model.named_steps:
             est = model.named_steps[part]
             if hasattr(est, "feature_names_in_"):
-                return est.feature_names_in_
+                return np.asarray(est.feature_names_in_)  # type: ignore[no-any-return]
 
     if hasattr(model, "feature_names_in_"):
-        return model.feature_names_in_
+        return np.asarray(model.feature_names_in_)  # type: ignore[no-any-return]
 
     raise ValueError("Cannot determine expected feature names from the model/scaler.")
 
@@ -151,7 +151,7 @@ def get_scores(model, X: pd.DataFrame) -> np.ndarray:
         scores = np.asarray(scores)
         if scores.ndim > 1:
             scores = scores[:, -1]
-        return scores
+        return scores  # type: ignore[no-any-return]
     except Exception:
         pass
 
@@ -160,7 +160,7 @@ def get_scores(model, X: pd.DataFrame) -> np.ndarray:
         if proba is not None:
             p = np.asarray(proba(X))
             if p.ndim == 2 and p.shape[1] > 1:
-                return p[:, 1]
+                return np.asarray(p[:, 1])  # type: ignore[no-any-return]
     except Exception:
         pass
 
