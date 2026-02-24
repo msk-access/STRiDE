@@ -28,3 +28,8 @@ stride run \
 - 🤖 **Trained SGD classifier** — bundled model, no setup required
 - 📋 **Rich CLI** — progress bars, colored tables, structured logging
 - 🐳 **Docker support** — `ghcr.io/msk-access/stride`
+
+## Disclaimer
+
+!!! warning "Research Use Only"
+    This pipeline is intended for research use within MSK-ACCESS and has not been validated for clinical deployment. Use and interpretation of results should follow institutional guidelines.
