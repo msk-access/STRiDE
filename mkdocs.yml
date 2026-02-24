@@ -49,6 +49,7 @@ extra:
 markdown_extensions:
   - admonition
   - pymdownx.details
+  - pymdownx.snippets
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -76,3 +77,4 @@ nav:
     - Batch Processing: user-guide/batch.md
   - Architecture: architecture.md
   - Changelog: changelog.md
+  - Contributing: contributing.md
