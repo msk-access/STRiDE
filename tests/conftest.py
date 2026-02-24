@@ -2,7 +2,6 @@
 
 import os
 import tempfile
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -20,7 +19,9 @@ def sample_sites_file(tmp_dir):
     path = os.path.join(tmp_dir, "test_sites.txt")
     with open(path, "w") as f:
         # Header matching the real site list format
-        f.write("chrom\tstart\tunit_len\tref_len\ttimes\tend\tname\trepeat_unit\tleft_flank\tright_flank\n")
+        f.write(
+            "chrom\tstart\tunit_len\tref_len\ttimes\tend\tname\trepeat_unit\tleft_flank\tright_flank\n"
+        )
         f.write("chr1\t100\t1\t1\t15\t115\tsite1\tA\tGCTAGCTA\tTCGATCGA\n")
         f.write("chr2\t200\t2\t2\t10\t220\tsite2\tAT\tACGTACGT\tTGCATGCA\n")
     return path

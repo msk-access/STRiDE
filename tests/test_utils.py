@@ -5,12 +5,12 @@ import os
 
 import pytest
 
-from stride.utils import safe_name, setup_logging, strip_ext, read_samples_list
-
+from stride.utils import read_samples_list, safe_name, setup_logging, strip_ext
 
 # ---------------------------------------------------------------------------
 # setup_logging
 # ---------------------------------------------------------------------------
+
 
 class TestSetupLogging:
     """Verify Rich-based logging configuration."""
@@ -34,6 +34,7 @@ class TestSetupLogging:
 # safe_name
 # ---------------------------------------------------------------------------
 
+
 class TestSafeName:
     """Verify filename sanitisation."""
 
@@ -56,6 +57,7 @@ class TestSafeName:
 # ---------------------------------------------------------------------------
 # strip_ext
 # ---------------------------------------------------------------------------
+
 
 class TestStripExt:
     """Verify alignment extension stripping."""
@@ -82,6 +84,7 @@ class TestStripExt:
 # ---------------------------------------------------------------------------
 # read_samples_list
 # ---------------------------------------------------------------------------
+
 
 class TestReadSamplesList:
     """Verify CSV/TSV sample manifest parsing."""

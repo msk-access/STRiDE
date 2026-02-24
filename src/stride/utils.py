@@ -6,15 +6,14 @@ Rich-powered logging setup used by the CLI layer.
 
 import logging
 import os
-from typing import Dict, List
 
 import pandas as pd
 from rich.logging import RichHandler
 
-
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+
 
 def setup_logging(verbose: bool = False) -> None:
     """Configure the root logger with a Rich handler.
@@ -42,6 +41,7 @@ def setup_logging(verbose: bool = False) -> None:
 # Filename / path helpers
 # ---------------------------------------------------------------------------
 
+
 def safe_name(s: str) -> str:
     """Sanitise a string for use in filenames.
 
@@ -68,7 +68,8 @@ def strip_ext(path: str) -> str:
 # Sample-list I/O
 # ---------------------------------------------------------------------------
 
-def read_samples_list(list_path: str) -> List[Dict[str, str]]:
+
+def read_samples_list(list_path: str) -> list[dict[str, str]]:
     """Read a CSV/TSV sample manifest.
 
     The file must contain columns mappable to ``sample_id``, ``tumor_bam``
@@ -105,7 +106,7 @@ def read_samples_list(list_path: str) -> List[Dict[str, str]]:
 
     s_col, t_col, n_col = sample_cols[0], tumor_cols[0], normal_cols[0]
 
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     for _, row in df.iterrows():
         sid = str(row[s_col]).strip()
         tb = str(row[t_col]).strip()
