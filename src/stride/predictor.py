@@ -1,5 +1,6 @@
 import os
 import glob
+import logging
 import joblib
 import numpy as np
 import pandas as pd
@@ -7,16 +8,19 @@ from typing import Optional, Dict, List, Any, Tuple
 
 from .utils import safe_name
 
+# Module logger — configured by the CLI layer via utils.setup_logging()
+logger = logging.getLogger(__name__)
+
 META_IGNORE_COLS = {"chrom", "chr", "start", "end", "ref", "alt", "site_id", "label", "sample_id"}
 
 def extract_all_features_from_tsv(file_path: str) -> Optional[Dict[str, float]]:
     try:
         if os.path.getsize(file_path) == 0:
-            print(f"Skipping empty file: {file_path}")
+            logger.warning("Skipping empty file: %s", file_path)
             return None
         df = pd.read_csv(file_path, sep="\t")
         if "start" not in df.columns or ("chrom" not in df.columns and "chr" not in df.columns):
-            print(f"Skipping malformed file (missing chrom/start): {file_path}")
+            logger.warning("Skipping malformed file (missing chrom/start): %s", file_path)
             return None
         chrom_col = "chrom" if "chrom" in df.columns else "chr"
         df["site_id"] = df[chrom_col].astype(str) + "_" + df["start"].astype(str)
@@ -29,7 +33,7 @@ def extract_all_features_from_tsv(file_path: str) -> Optional[Dict[str, float]]:
                 feats[f"{site}_{m}"] = row.get(m, np.nan)
         return feats
     except Exception as e:
-        print(f"Error reading file {file_path}: {e}")
+        logger.error("Error reading file %s: %s", file_path, e)
         return None
 
 def gather_samples_from_inputs(
