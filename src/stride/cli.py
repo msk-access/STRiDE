@@ -5,6 +5,7 @@ Provides three sub-commands:
 * ``stride features``  — generate MSI feature TSVs from tumor/normal BAMs
 * ``stride predict``   — predict MSI status from pre-computed feature TSVs
 * ``stride run``       — end-to-end pipeline (features → prediction)
+* ``stride qc``        — generate interactive QC reports from feature TSVs
 
 All parameters are explicit ``--options``; no positional arguments.
 """
@@ -254,6 +255,9 @@ def run(
     delete_features: bool = typer.Option(
         False, "--delete-features", help="Delete feature TSVs after prediction."
     ),
+    generate_qc: bool = typer.Option(
+        False, "--generate-qc", help="Generate an interactive QC report after prediction."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """End-to-end MSI pipeline: BAMs → features → prediction."""
@@ -280,14 +284,21 @@ def run(
             min_coverage=min_coverage,
             max_repeat_bins=max_repeat_bins,
             keep_features=not delete_features,
+            generate_qc=generate_qc,
         )
 
         # Summary table
         table = Table(title=f"Batch Complete — {len(results)} samples")
         table.add_column("Sample", style="cyan", no_wrap=True)
         table.add_column("Prediction File")
-        for r in results:
-            table.add_row(r["sample_id"], r["prediction_txt"])
+        if generate_qc:
+            table.add_column("QC Report")
+            for r in results:
+                table.add_row(r["sample_id"], r["prediction_txt"], r.get("qc_report", ""))
+        else:
+            for r in results:
+                table.add_row(r["sample_id"], r["prediction_txt"])
+
         console.print(table)
         return
 
@@ -310,6 +321,50 @@ def run(
         min_coverage=min_coverage,
         max_repeat_bins=max_repeat_bins,
         keep_features=not delete_features,
+        generate_qc=generate_qc,
     )
     logger.info("Sample: %s", res["sample_id"])
     logger.info("Prediction: %s", res["prediction_txt"])
+    if generate_qc:
+        logger.info("QC Report: %s", res.get("qc_report"))
+
+
+# ---------------------------------------------------------------------------
+# stride qc
+# ---------------------------------------------------------------------------
+
+@app.command()
+def qc(
+    feature_tsv: str = typer.Option(..., "--feature-tsv", help="Feature TSV from stride run or features."),
+    prediction: Optional[str] = typer.Option(None, "--prediction", help="Prediction output TSV to extract MSI status."),
+    output: str = typer.Option("qc_report.html", "--output", help="Output path for the HTML report."),
+    verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
+) -> None:
+    """Generate an interactive HTML QC report for a sample."""
+    import pandas as pd
+
+    from .qc import generate_report, is_qc_available
+
+    setup_logging(verbose=verbose)
+
+    if not is_qc_available():
+        logger.error("QC dependencies missing. Install using: pip install '.[qc]'")
+        raise typer.Exit(code=1)
+
+    pred_info = None
+    if prediction:
+        try:
+            df_pred = pd.read_csv(prediction, sep="\t")
+            if not df_pred.empty:
+                pred_info = {
+                    "msi_status": df_pred.iloc[0]["MSI_class_predicted"],
+                    "msi_score": df_pred.iloc[0]["msi_score"]
+                }
+        except Exception as e:
+            logger.warning(f"Failed to parse prediction file: {e}")
+
+    generate_report(
+        feature_tsv=feature_tsv,
+        output_path=output,
+        prediction_result=pred_info,
+    )
