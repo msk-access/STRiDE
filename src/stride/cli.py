@@ -3,7 +3,7 @@
 Provides three sub-commands:
 
 * ``stride features``  — generate MSI feature TSVs from tumor/normal BAMs
-* ``stride predict``   — predict MSI/MSS from pre-computed feature TSVs
+* ``stride predict``   — predict MSI status from pre-computed feature TSVs
 * ``stride run``       — end-to-end pipeline (features → prediction)
 
 All parameters are explicit ``--options``; no positional arguments.
@@ -129,9 +129,14 @@ def predict(
         None, "--list-file", help="Text file with one feature TSV path per line."
     ),
     out_dir: str = typer.Option(..., "--out-dir", help="Output directory for prediction files."),
+    matched_norm_sample_barcode: Optional[str] = typer.Option(
+        None,
+        "--matched-norm-sample-barcode",
+        help="Matched normal sample barcode (MAF-standard). Populates output column.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
-    """Predict MSI/MSS from pre-computed feature TSVs."""
+    """Predict MSI status from pre-computed feature TSVs."""
     from rich.console import Console
     from rich.table import Table
 
@@ -141,6 +146,7 @@ def predict(
         get_expected_features,
         get_scores,
         load_model,
+        map_msi_label,
         write_one_output_per_sample,
     )
 
@@ -175,10 +181,14 @@ def predict(
     y_pred = np.asarray(model.predict(X)).astype(int)
     scores = np.asarray(get_scores(model, X), dtype=float)
 
+    # Build MAF-aligned prediction DataFrame
+    msi_labels = [map_msi_label(p) for p in y_pred]
+    norm_bc = matched_norm_sample_barcode or ""
     df_preds = pd.DataFrame(
         {
-            "Sample_ID": sample_ids,
-            "MSI_class_predicted": y_pred,
+            "Tumor_Sample_Barcode": sample_ids,
+            "Matched_Norm_Sample_Barcode": [norm_bc] * len(sample_ids),
+            "MSI_class_predicted": msi_labels,
             "msi_score": np.round(scores, 6),
         }
     )
@@ -186,15 +196,17 @@ def predict(
 
     # Display a Rich summary table
     table = Table(title="MSI Predictions")
-    table.add_column("Sample", style="cyan", no_wrap=True)
+    table.add_column("Tumor Sample", style="cyan", no_wrap=True)
     table.add_column("Prediction", style="bold")
     table.add_column("Score", justify="right")
 
     for _, row in df_preds.iterrows():
-        pred_label = "MSI-H" if int(row["MSI_class_predicted"]) == 1 else "MSS"
-        style = "red bold" if pred_label == "MSI-H" else "green"
+        pred_label = str(row["MSI_class_predicted"])
+        style = "red bold" if pred_label == "MSI" else "green"
         table.add_row(
-            str(row["Sample_ID"]), f"[{style}]{pred_label}[/{style}]", f"{row['msi_score']:.6f}"
+            str(row["Tumor_Sample_Barcode"]),
+            f"[{style}]{pred_label}[/{style}]",
+            f"{row['msi_score']:.6f}",
         )
 
     console.print(table)
@@ -227,7 +239,13 @@ def run(
         help="CSV/TSV with sample_id, tumor_bam, normal_bam columns (batch mode).",
     ),
     sample_id: Optional[str] = typer.Option(
-        None, "--sample-id", help="Sample ID (single-sample mode)."
+        None, "--sample-id", help="Sample ID / Tumor_Sample_Barcode (single-sample mode)."
+    ),
+    matched_norm_sample_barcode: Optional[str] = typer.Option(
+        None,
+        "--matched-norm-sample-barcode",
+        help="Matched normal sample barcode (MAF-standard, single-sample mode). "
+        "Defaults to normal BAM basename.",
     ),
     min_coverage: int = typer.Option(20, "--min-coverage", help="Minimum read coverage per site."),
     max_repeat_bins: int = typer.Option(
@@ -288,6 +306,7 @@ def run(
         model_joblib=resolved_model,
         out_dir=out_dir,
         sample_id=sample_id,
+        matched_norm_sample_barcode=matched_norm_sample_barcode,
         min_coverage=min_coverage,
         max_repeat_bins=max_repeat_bins,
         keep_features=not delete_features,

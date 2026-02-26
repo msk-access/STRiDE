@@ -175,7 +175,47 @@ def load_model(model_joblib: str):
     return model
 
 
-def predict_from_feature_tsvs(model_joblib: str, feature_tsvs: list[str]) -> pd.DataFrame:
+def map_msi_label(prediction: int) -> str:
+    """Map an integer model prediction to a MAF-style MSI status label.
+
+    Parameters
+    ----------
+    prediction : int
+        Binary model output (``1`` = MSI-H positive, ``0`` = not MSI).
+
+    Returns
+    -------
+    str
+        ``"MSI"`` when *prediction* is ``1``, ``"NA"`` otherwise.
+    """
+    return "MSI" if prediction == 1 else "NA"
+
+
+def predict_from_feature_tsvs(
+    model_joblib: str,
+    feature_tsvs: list[str],
+    normal_barcodes: Optional[list[str]] = None,
+) -> pd.DataFrame:
+    """Load a model and predict MSI status from feature TSVs.
+
+    Parameters
+    ----------
+    model_joblib : str
+        Path to the serialised scikit-learn model (``.joblib``).
+    feature_tsvs : list[str]
+        Paths to per-sample feature TSV files.
+    normal_barcodes : list[str] | None
+        Optional matched-normal sample barcodes, one per sample.  When
+        *None*, the ``Matched_Norm_Sample_Barcode`` column is filled with
+        empty strings.
+
+    Returns
+    -------
+    pd.DataFrame
+        MAF-aligned prediction table with columns
+        ``Tumor_Sample_Barcode``, ``Matched_Norm_Sample_Barcode``,
+        ``MSI_class_predicted`` (``"MSI"`` / ``"NA"``), and ``msi_score``.
+    """
     model = load_model(model_joblib)
     expected = get_expected_features(model)
 
@@ -184,17 +224,50 @@ def predict_from_feature_tsvs(model_joblib: str, feature_tsvs: list[str]) -> pd.
     y_pred = np.asarray(model.predict(X)).astype(int)
     scores = np.asarray(get_scores(model, X), dtype=float)
 
+    msi_labels = [map_msi_label(p) for p in y_pred]
+    norm_bc = normal_barcodes if normal_barcodes else [""] * len(sample_ids)
+
+    logger.info(
+        "Prediction complete: %d sample(s), %d MSI, %d NA",
+        len(sample_ids),
+        msi_labels.count("MSI"),
+        msi_labels.count("NA"),
+    )
+
     return pd.DataFrame(
-        {"Sample_ID": sample_ids, "MSI_class_predicted": y_pred, "msi_score": np.round(scores, 6)}
+        {
+            "Tumor_Sample_Barcode": sample_ids,
+            "Matched_Norm_Sample_Barcode": norm_bc,
+            "MSI_class_predicted": msi_labels,
+            "msi_score": np.round(scores, 6),
+        }
     )
 
 
 def write_one_output_per_sample(df_preds: pd.DataFrame, out_dir: str) -> list[str]:
+    """Write one tab-delimited prediction file per sample.
+
+    Each file is named ``<tumor_barcode>_msi.txt`` and contains the full
+    prediction row (MAF-aligned columns).
+
+    Parameters
+    ----------
+    df_preds : pd.DataFrame
+        Prediction table produced by :func:`predict_from_feature_tsvs`.
+    out_dir : str
+        Directory to write the per-sample files into.
+
+    Returns
+    -------
+    list[str]
+        Paths to the written output files.
+    """
     os.makedirs(out_dir, exist_ok=True)
     written = []
     for _, row in df_preds.iterrows():
-        sid = str(row["Sample_ID"])
+        sid = str(row["Tumor_Sample_Barcode"])
         out_path = os.path.join(out_dir, f"{safe_name(sid)}_msi.txt")
         pd.DataFrame([row]).to_csv(out_path, sep="\t", index=False)
+        logger.debug("Wrote prediction: %s", out_path)
         written.append(out_path)
     return written
