@@ -100,6 +100,8 @@ class TestReadSamplesList:
         assert len(result) == 2
         assert result[0]["sample_id"] == "S1"
         assert result[1]["tumor_bam"] == "/data/S2_T.bam"
+        # matched_norm_sample_barcode defaults to "" when column absent
+        assert result[0]["matched_norm_sample_barcode"] == ""
 
     def test_csv_with_alias_headers(self, tmp_dir):
         path = os.path.join(tmp_dir, "samples.csv")
@@ -110,6 +112,7 @@ class TestReadSamplesList:
         result = read_samples_list(path)
         assert len(result) == 1
         assert result[0]["sample_id"] == "P1"
+        assert result[0]["matched_norm_sample_barcode"] == ""
 
     def test_skips_nan_rows(self, tmp_dir):
         path = os.path.join(tmp_dir, "samples.tsv")
@@ -129,3 +132,35 @@ class TestReadSamplesList:
 
         with pytest.raises(ValueError, match="sample_id"):
             read_samples_list(path)
+
+    def test_with_normal_barcode(self, tmp_dir):
+        """Manifest with explicit matched_norm_sample_barcode column."""
+        path = os.path.join(tmp_dir, "samples_bc.tsv")
+        with open(path, "w") as f:
+            f.write("sample_id\ttumor_bam\tnormal_bam\tmatched_norm_sample_barcode\n")
+            f.write("S1\tt1.bam\tn1.bam\tN-BARCODE-01\n")
+            f.write("S2\tt2.bam\tn2.bam\tN-BARCODE-02\n")
+
+        result = read_samples_list(path)
+        assert result[0]["matched_norm_sample_barcode"] == "N-BARCODE-01"
+        assert result[1]["matched_norm_sample_barcode"] == "N-BARCODE-02"
+
+    def test_normal_barcode_alias(self, tmp_dir):
+        """The 'normal_barcode' alias should also be recognised."""
+        path = os.path.join(tmp_dir, "samples_alias.tsv")
+        with open(path, "w") as f:
+            f.write("sample_id\ttumor_bam\tnormal_bam\tnormal_barcode\n")
+            f.write("S1\tt1.bam\tn1.bam\tALIAS-01\n")
+
+        result = read_samples_list(path)
+        assert result[0]["matched_norm_sample_barcode"] == "ALIAS-01"
+
+    def test_without_normal_barcode(self, tmp_dir):
+        """When barcode column is absent, default to empty string."""
+        path = os.path.join(tmp_dir, "samples_no_bc.tsv")
+        with open(path, "w") as f:
+            f.write("sample_id\ttumor_bam\tnormal_bam\n")
+            f.write("S1\tt1.bam\tn1.bam\n")
+
+        result = read_samples_list(path)
+        assert result[0]["matched_norm_sample_barcode"] == ""

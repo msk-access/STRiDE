@@ -64,11 +64,18 @@ def run_end_to_end_single(
     model_joblib: str,
     out_dir: str,
     sample_id: Optional[str] = None,
+    matched_norm_sample_barcode: Optional[str] = None,
     min_coverage: int = 20,
     max_repeat_bins: int = 100,
     keep_features: bool = True,
 ) -> dict[str, str]:
     """Run the full pipeline for a single sample.
+
+    Parameters
+    ----------
+    matched_norm_sample_barcode : str | None
+        Explicit matched-normal barcode for the output.  When *None*,
+        derived automatically from *normal_bam* via :func:`strip_ext`.
 
     Returns a dict with keys ``sample_id``, ``features_tsv``, and
     ``prediction_txt``.
@@ -76,7 +83,8 @@ def run_end_to_end_single(
     os.makedirs(out_dir, exist_ok=True)
 
     sid = sample_id.strip() if sample_id else strip_ext(tumor_bam)
-    logger.info("Processing sample: %s", sid)
+    normal_bc = matched_norm_sample_barcode or strip_ext(normal_bam)
+    logger.info("Processing sample: %s (matched normal: %s)", sid, normal_bc)
 
     features_dir = os.path.join(out_dir, "features")
     preds_dir = os.path.join(out_dir, "predictions")
@@ -94,7 +102,9 @@ def run_end_to_end_single(
         max_repeat_bins=max_repeat_bins,
     )
 
-    df_preds = predict_from_feature_tsvs(model_joblib, [feat_tsv])
+    df_preds = predict_from_feature_tsvs(
+        model_joblib, [feat_tsv], normal_barcodes=[normal_bc]
+    )
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
     if not keep_features:
@@ -139,6 +149,7 @@ def run_end_to_end_batch(
     # 1) Generate feature TSV per sample
     feature_tsvs: list[str] = []
     sample_ids: list[str] = []
+    normal_barcodes: list[str] = []
     for i, s in enumerate(samples, 1):
         sid = s["sample_id"]
         logger.info("[%d/%d] Generating features for %s", i, len(samples), sid)
@@ -154,10 +165,16 @@ def run_end_to_end_batch(
         )
         feature_tsvs.append(feat_tsv)
         sample_ids.append(sid)
+        # Use explicit barcode from manifest if available, otherwise derive
+        normal_barcodes.append(
+            s.get("matched_norm_sample_barcode") or strip_ext(s["normal_bam"])
+        )
 
     # 2) Predict all (batch) then write one output per sample
     logger.info("Running batch prediction for %d samples", len(sample_ids))
-    df_preds = predict_from_feature_tsvs(model_joblib, feature_tsvs)
+    df_preds = predict_from_feature_tsvs(
+        model_joblib, feature_tsvs, normal_barcodes=normal_barcodes
+    )
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
     # 3) Optional cleanup of intermediate feature TSVs

@@ -4,7 +4,11 @@ import os
 
 import pandas as pd
 
-from stride.predictor import extract_all_features_from_tsv, write_one_output_per_sample
+from stride.predictor import (
+    extract_all_features_from_tsv,
+    map_msi_label,
+    write_one_output_per_sample,
+)
 
 # ---------------------------------------------------------------------------
 # extract_all_features_from_tsv
@@ -35,18 +39,39 @@ class TestExtractFeatures:
 
 
 # ---------------------------------------------------------------------------
+# map_msi_label
+# ---------------------------------------------------------------------------
+
+
+class TestMapMsiLabel:
+    """Verify integer-to-label mapping for MSI status."""
+
+    def test_positive_prediction(self):
+        assert map_msi_label(1) == "MSI"
+
+    def test_negative_prediction(self):
+        assert map_msi_label(0) == "NA"
+
+    def test_unexpected_value_returns_na(self):
+        """Any non-1 value should map to NA."""
+        assert map_msi_label(-1) == "NA"
+        assert map_msi_label(2) == "NA"
+
+
+# ---------------------------------------------------------------------------
 # write_one_output_per_sample
 # ---------------------------------------------------------------------------
 
 
 class TestWriteOutput:
-    """Verify per-sample prediction output writing."""
+    """Verify per-sample prediction output writing with MAF-aligned columns."""
 
     def test_writes_files(self, tmp_dir):
         df = pd.DataFrame(
             {
-                "Sample_ID": ["S1", "S2"],
-                "MSI_class_predicted": [0, 1],
+                "Tumor_Sample_Barcode": ["S1", "S2"],
+                "Matched_Norm_Sample_Barcode": ["N1", "N2"],
+                "MSI_class_predicted": ["NA", "MSI"],
                 "msi_score": [0.123, 0.987],
             }
         )
@@ -59,22 +84,41 @@ class TestWriteOutput:
     def test_output_content(self, tmp_dir):
         df = pd.DataFrame(
             {
-                "Sample_ID": ["TestSample"],
-                "MSI_class_predicted": [1],
+                "Tumor_Sample_Barcode": ["TestSample"],
+                "Matched_Norm_Sample_Barcode": ["NormalSample"],
+                "MSI_class_predicted": ["MSI"],
                 "msi_score": [0.5],
             }
         )
         paths = write_one_output_per_sample(df, tmp_dir)
         result = pd.read_csv(paths[0], sep="\t")
-        assert result["MSI_class_predicted"].iloc[0] == 1
+        assert result["MSI_class_predicted"].iloc[0] == "MSI"
+        assert result["Tumor_Sample_Barcode"].iloc[0] == "TestSample"
+        assert result["Matched_Norm_Sample_Barcode"].iloc[0] == "NormalSample"
         assert result["msi_score"].iloc[0] == 0.5
+
+    def test_output_na_status(self, tmp_dir):
+        """Verify NA status is written correctly."""
+        df = pd.DataFrame(
+            {
+                "Tumor_Sample_Barcode": ["Sample01"],
+                "Matched_Norm_Sample_Barcode": [""],
+                "MSI_class_predicted": ["NA"],
+                "msi_score": [-0.3],
+            }
+        )
+        paths = write_one_output_per_sample(df, tmp_dir)
+        # keep_default_na=False prevents pandas from parsing "NA" as NaN
+        result = pd.read_csv(paths[0], sep="\t", keep_default_na=False)
+        assert result["MSI_class_predicted"].iloc[0] == "NA"
 
     def test_creates_output_dir(self, tmp_dir):
         nested = os.path.join(tmp_dir, "nested", "dir")
         df = pd.DataFrame(
             {
-                "Sample_ID": ["S1"],
-                "MSI_class_predicted": [0],
+                "Tumor_Sample_Barcode": ["S1"],
+                "Matched_Norm_Sample_Barcode": [""],
+                "MSI_class_predicted": ["NA"],
                 "msi_score": [0.1],
             }
         )

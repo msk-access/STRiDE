@@ -62,6 +62,7 @@ class TestPredictCommand:
         assert "--model-joblib" in out
         assert "--features-dir" in out
         assert "--out-dir" in out
+        assert "--matched-norm-sample-barco" in out
 
     def test_requires_out_dir(self):
         result = runner.invoke(app, ["predict"])
@@ -79,6 +80,7 @@ class TestRunCommand:
         assert "--samples-list" in out
         assert "--model-joblib" in out
         assert "--delete-features" in out
+        assert "Matched normal sample" in out
 
     def test_requires_out_dir(self):
         result = runner.invoke(app, ["run"])

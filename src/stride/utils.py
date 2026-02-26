@@ -76,6 +76,12 @@ def read_samples_list(list_path: str) -> list[dict[str, str]]:
     and ``normal_bam``.  Header names are flexible — common aliases such as
     ``sample``, ``tumor``, ``normal_path``, etc. are accepted.
 
+    An optional ``matched_norm_sample_barcode`` column (aliases:
+    ``normal_barcode``, ``normal_sample_barcode``, ``matched_normal``)
+    provides an explicit matched-normal identifier for the output.  When
+    absent, the pipeline layer derives it from ``normal_bam`` via
+    :func:`strip_ext`.
+
     Parameters
     ----------
     list_path : str
@@ -84,7 +90,8 @@ def read_samples_list(list_path: str) -> list[dict[str, str]]:
     Returns
     -------
     list[dict]
-        Each dict has keys ``sample_id``, ``tumor_bam``, ``normal_bam``.
+        Each dict has keys ``sample_id``, ``tumor_bam``, ``normal_bam``,
+        and ``matched_norm_sample_barcode`` (may be ``""``).
 
     Raises
     ------
@@ -106,6 +113,16 @@ def read_samples_list(list_path: str) -> list[dict[str, str]]:
 
     s_col, t_col, n_col = sample_cols[0], tumor_cols[0], normal_cols[0]
 
+    # Optional: matched-normal barcode column
+    norm_bc_aliases = {
+        "matched_norm_sample_barcode",
+        "normal_barcode",
+        "normal_sample_barcode",
+        "matched_normal",
+    }
+    norm_bc_cols = [c for c in df.columns if c in norm_bc_aliases]
+    norm_bc_col = norm_bc_cols[0] if norm_bc_cols else None
+
     out: list[dict[str, str]] = []
     for _, row in df.iterrows():
         sid = str(row[s_col]).strip()
@@ -113,5 +130,16 @@ def read_samples_list(list_path: str) -> list[dict[str, str]]:
         nb = str(row[n_col]).strip()
         if not sid or sid.lower() == "nan":
             continue
-        out.append({"sample_id": sid, "tumor_bam": tb, "normal_bam": nb})
+        # Barcode defaults to "" when column is absent or value is NaN
+        norm_bc = ""
+        if norm_bc_col is not None:
+            raw = str(row[norm_bc_col]).strip()
+            if raw and raw.lower() != "nan":
+                norm_bc = raw
+        out.append({
+            "sample_id": sid,
+            "tumor_bam": tb,
+            "normal_bam": nb,
+            "matched_norm_sample_barcode": norm_bc,
+        })
     return out
