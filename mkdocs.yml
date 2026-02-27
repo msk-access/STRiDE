@@ -76,6 +76,7 @@ nav:
     - Prediction: user-guide/prediction.md
     - QC Reports: user-guide/qc.md
     - Batch Processing: user-guide/batch.md
+    - Nextflow Pipeline: user-guide/nextflow.md
   - Architecture: architecture.md
   - Changelog: changelog.md
   - Contributing: contributing.md

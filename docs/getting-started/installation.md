@@ -3,7 +3,7 @@
 ## From PyPI
 
 ```bash
-pip install stride
+pip install stride-msk
 ```
 
 ## Development Install
