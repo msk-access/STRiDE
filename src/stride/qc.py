@@ -112,11 +112,11 @@ def parse_feature_tsv(feature_tsv: str) -> pd.DataFrame:
         df["chrom"].astype(str)
         + ":"
         + df["start"].astype(str)
-        + " ("
+        + " ("  # type: ignore[operator]
         + df["repeat_count"].astype(str)
-        + "x"
-        + df["repeat_unit"]
-        + ")"
+        + "x"  # type: ignore[operator]
+        + df["repeat_unit"].astype(str)  # type: ignore[operator]
+        + ")"  # type: ignore[operator]
     )
     return df
 
@@ -790,9 +790,10 @@ def _build_site_explorer(df: pd.DataFrame) -> go.Figure:
 
         # Build visibility array: first 3 legend traces always True
         vis = [True] * n_legend_traces + [False] * (n_sites * traces_per_site)
-        vis[n_legend_traces + traces_per_site * i] = True
-        vis[n_legend_traces + traces_per_site * i + 1] = True
-        vis[n_legend_traces + traces_per_site * i + 2] = True
+        base = n_legend_traces + traces_per_site * int(i)  # type: ignore[call-overload]
+        vis[base] = True
+        vis[base + 1] = True
+        vis[base + 2] = True
 
         buttons.append(
             {
