@@ -77,6 +77,8 @@ The top-level summary strip shows:
 | **Prediction** | MSI/MSS/UNKNOWN badge (populated when `--prediction` is supplied) |
 | **MSI Score** | Numeric MSI score from the prediction model |
 | **Sites** | Total number of microsatellite loci analysed |
+| **Threshold** | Decision threshold used by the prediction model (default 0.50) |
+| **Theme Toggle** | 🌙/☀ button in the top-right corner; switches the entire report between dark and light mode |
 
 ---
 
@@ -149,15 +151,18 @@ Split violin plots comparing Normal vs Tumour distributions for **MapQ**,
 ## Tab 2 — Site Explorer
 
 Drill down into **every individual locus** with an interactive
-repeat-length distribution histogram.
+repeat-length distribution histogram.  Loci are sorted by chromosome and
+position.
 
 ### Features
 
 | Feature | Description |
 |---------|-------------|
-| **Metric Pills** | Three toggle buttons (**L1 Distance**, **L2 Distance**, **Wasserstein**) that re-rank all loci by the chosen distance metric |
-| **Dropdown** | Select any locus by rank; label shows rank, genomic position, repeat unit, and distance value |
-| **Normal vs Tumour bars** | Side-by-side normalised frequency bars; hover shows raw read count |
+| **Searchable Combobox** | Type to filter loci by genomic position (e.g. `chr4:55`); click the dropdown arrow or focus the input to browse the full list |
+| **Prev / Next Navigation** | ‹ / › buttons with a counter (e.g. "42 / 170") for sequential browsing |
+| **Raw / Normalized Toggle** | Pill-style buttons to swap the Y-axis between normalised frequency (0–1) and raw read counts (integers); state persists across locus changes |
+| **Normal vs Tumour bars** | Side-by-side bars; tooltips identify **Normal** or **Tumor** and show both frequency and raw read count |
+| **Dynamic X-axis** | Range auto-scales to the maximum observed repeat length across all sites, eliminating wasted whitespace |
 | **Reference line** | Green dashed vertical line at the reference repeat count for the selected locus; dynamically adjusts per site |
 | **Quality badge** | Styled badge (✓ PASS / ⚠ REVIEW / ⚠ FAIL) based on tumour MapQ and insert-size delta |
 | **Stats strip** | L1, L2, Wass, p-value, Entropy Δ, T_Cov, N_Cov, T_MapQ, T_BQ |
@@ -168,7 +173,8 @@ repeat-length distribution histogram.
 ## Tab 3 — Data Table
 
 A fully interactive table powered by [Tabulator.js v6](https://tabulator.info)
-with the **Midnight dark theme**.
+with the **Midnight dark theme** (auto-switches with the report-wide
+light/dark mode toggle).
 
 ### Table Features
 

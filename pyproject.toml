@@ -58,6 +58,12 @@ docs = [
     "mike",
 ]
 
+qc = [
+    "plotly>=5.15.0",
+    "kaleido>=0.2.1",
+    "reportlab>=4.0.0",
+]
+
 [project.scripts]
 stride = "stride.cli:app"
 

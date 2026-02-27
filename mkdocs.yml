@@ -74,6 +74,7 @@ nav:
   - User Guide:
     - Feature Generation: user-guide/features.md
     - Prediction: user-guide/prediction.md
+    - QC Reports: user-guide/qc.md
     - Batch Processing: user-guide/batch.md
   - Architecture: architecture.md
   - Changelog: changelog.md
