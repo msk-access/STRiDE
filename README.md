@@ -17,7 +17,7 @@ See the docs for:
 ## Quick Install
 
 ```bash
-pip install stride
+pip install stride-msk
 ```
 
 ## Disclaimer

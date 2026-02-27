@@ -7,7 +7,7 @@ STRiDE extracts repeat-frequency features from paired tumor/normal BAMs at 170 c
 ## Quick Start
 
 ```bash
-pip install stride
+pip install stride-msk
 
 # Single-sample end-to-end
 stride run \

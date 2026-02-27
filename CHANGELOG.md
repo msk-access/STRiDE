@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Data Table powered by Tabulator.js with frozen columns, progress-bar formatters, filters, sort, CSV export
   - Light / dark theme toggle (persists across tabs)
   - `--generate-qc` flag for `stride run` to auto-generate reports
+- **Nextflow DSL2 pipeline** — nf-core-compatible workflow
+  - `STRIDE_RUN` module wrapping `stride run` for per-sample parallelism
+  - Standalone modules: `STRIDE_FEATURES`, `STRIDE_PREDICT`, `STRIDE_QC`
+  - Profiles: Docker, Singularity, SLURM (`cmobic_cpu`), local
+  - Dual BAI index discovery (`.bam.bai` + `.bai`)
+  - Execution reports: trace, timeline, DAG, HTML report
+  - Test profile for CI validation
+- **Dockerfile** — add `[qc]` extra, OCI authors label, install verification
 
 
 ### Changed

@@ -13,7 +13,7 @@ directly from the feature TSV produced during prediction.
 The QC module uses optional plotting dependencies.  Install with the `qc` extra:
 
 ```bash
-pip install "stride[qc]"
+pip install "stride-msk[qc]"
 ```
 
 This pulls in **Plotly ≥ 5.15** (visualisations) and loads
