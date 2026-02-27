@@ -136,10 +136,12 @@ def read_samples_list(list_path: str) -> list[dict[str, str]]:
             raw = str(row[norm_bc_col]).strip()
             if raw and raw.lower() != "nan":
                 norm_bc = raw
-        out.append({
-            "sample_id": sid,
-            "tumor_bam": tb,
-            "normal_bam": nb,
-            "matched_norm_sample_barcode": norm_bc,
-        })
+        out.append(
+            {
+                "sample_id": sid,
+                "tumor_bam": tb,
+                "normal_bam": nb,
+                "matched_norm_sample_barcode": norm_bc,
+            }
+        )
     return out
