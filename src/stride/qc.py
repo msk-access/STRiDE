@@ -15,9 +15,11 @@ Design System
 Dependencies: plotly ≥ 5.15  (Tabulator loaded from CDN)
 """
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -29,6 +31,9 @@ try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +100,11 @@ def parse_feature_tsv(feature_tsv: str) -> pd.DataFrame:
                 df[col]
                 .fillna("")
                 .apply(
-                    lambda x: np.array([float(v) for v in str(x).split()])
-                    if str(x).strip()
-                    else np.array([])
+                    lambda x: (
+                        np.array([float(v) for v in str(x).split()])
+                        if str(x).strip()
+                        else np.array([])
+                    )
                 )
             )
 
@@ -118,7 +125,7 @@ def generate_report(
     feature_tsv: str,
     output_path: str,
     format: str = "html",
-    prediction_result: Optional[dict] = None,
+    prediction_result: dict | None = None,
     top_n: int = 99999,
 ) -> None:
     """Main entrypoint — generates the interactive HTML QC report."""
@@ -155,13 +162,14 @@ def _waterfall_colour_gradient(values: pd.Series, base_rgb: tuple) -> list:
 def _card_waterfalls(df: pd.DataFrame) -> go.Figure:
     """Card 1 — Triple waterfall: L1, L2, Wasserstein side-by-side."""
     metrics = [
-        ("l1_distance", "L1 Distance", (79, 195, 247)),    # Cyan
-        ("l2_distance", "L2 Distance", (146, 112, 202)),    # Lavender
+        ("l1_distance", "L1 Distance", (79, 195, 247)),  # Cyan
+        ("l2_distance", "L2 Distance", (146, 112, 202)),  # Lavender
         ("wasserstein_distance", "Wasserstein", (90, 216, 166)),  # Green
     ]
 
     fig = make_subplots(
-        rows=1, cols=3,
+        rows=1,
+        cols=3,
         subplot_titles=[m[1] for m in metrics],
         horizontal_spacing=0.06,
     )
@@ -176,13 +184,11 @@ def _card_waterfalls(df: pd.DataFrame) -> go.Figure:
                 x=ds[col],
                 orientation="h",
                 marker_color=colours,
-                hovertemplate=(
-                    "<b>%{y}</b><br>"
-                    f"{title}: %{{x:.4f}}<extra></extra>"
-                ),
+                hovertemplate=("<b>%{y}</b><br>" f"{title}: %{{x:.4f}}<extra></extra>"),
                 showlegend=False,
             ),
-            row=1, col=col_idx,
+            row=1,
+            col=col_idx,
         )
         # Show labels for top-5 highest-value loci only
         top_n_loci = min(5, len(ds))
@@ -193,7 +199,8 @@ def _card_waterfalls(df: pd.DataFrame) -> go.Figure:
             ticktext=[ds["locus"].iloc[i] for i in tick_indices],
             tickfont={"size": 9, "color": TEXT_SECONDARY},
             title="",
-            row=1, col=col_idx,
+            row=1,
+            col=col_idx,
         )
         fig.update_xaxes(title_text=title, row=1, col=col_idx)
 
@@ -230,8 +237,14 @@ def _card_distance_correlation(df: pd.DataFrame) -> go.Figure:
         )
     )
     mx = max(df["l1_distance"].max(), df["l2_distance"].max()) * 1.05
-    fig.add_shape(type="line", x0=0, y0=0, x1=mx, y1=mx,
-                  line={"dash": "dot", "color": TEXT_SECONDARY, "width": 1})
+    fig.add_shape(
+        type="line",
+        x0=0,
+        y0=0,
+        x1=mx,
+        y1=mx,
+        line={"dash": "dot", "color": TEXT_SECONDARY, "width": 1},
+    )
     fig.update_layout(
         title="Distance Correlation (L1 vs L2)",
         xaxis_title="L1 Distance",
@@ -251,7 +264,11 @@ def _card_volcanoes(df: pd.DataFrame) -> go.Figure:
 
     # Build composite quality flag (uses shared QC_THRESHOLDS)
     flag_mapq = df["tumor_mapq_mean"] < QC_THRESHOLDS["mapq"]
-    flag_bq = (df["tumor_bq_mean"] < QC_THRESHOLDS["baseq"]) if "tumor_bq_mean" in df.columns else pd.Series(False, index=df.index)
+    flag_bq = (
+        (df["tumor_bq_mean"] < QC_THRESHOLDS["baseq"])
+        if "tumor_bq_mean" in df.columns
+        else pd.Series(False, index=df.index)
+    )
     flag_cov = df["tumor_total_coverage"] < QC_THRESHOLDS["coverage"]
     flagged = flag_mapq | flag_bq | flag_cov
 
@@ -275,46 +292,56 @@ def _card_volcanoes(df: pd.DataFrame) -> go.Figure:
     ]
 
     fig = make_subplots(
-        rows=1, cols=3,
+        rows=1,
+        cols=3,
         subplot_titles=[m[1] for m in metrics],
         horizontal_spacing=0.06,
     )
 
     for col_idx, (col, title) in enumerate(metrics, 1):
         # Good sites
-        fig.add_trace(go.Scatter(
-            x=df[~flagged][col], y=neg_log_p[~flagged],
-            mode="markers",
-            marker={"size": 5, "color": CLR_GOOD, "opacity": 0.7},
-            name="Pass QC",
-            showlegend=(col_idx == 1),
-            legendgroup="good",
-            hovertext=df[~flagged]["locus"],
-            hovertemplate=f"<b>%{{hovertext}}</b><br>{title}: %{{x:.4f}}<br>–log₁₀(p): %{{y:.1f}}<extra></extra>",
-        ), row=1, col=col_idx)
-        # Flagged sites
-        fig.add_trace(go.Scatter(
-            x=df[flagged][col], y=neg_log_p[flagged],
-            mode="markers",
-            marker={"size": 7, "color": CLR_WARN, "symbol": "x", "opacity": 0.9},
-            name="QC Flag",
-            showlegend=(col_idx == 1),
-            legendgroup="flag",
-            hovertext=df[flagged]["locus"],
-            customdata=flag_arr[flagged],
-            hovertemplate=(
-                f"<b>%{{hovertext}}</b><br>{title}: %{{x:.4f}}<br>"
-                "–log₁₀(p): %{y:.1f}<br>"
-                "⚠ %{customdata}<extra></extra>"
+        fig.add_trace(
+            go.Scatter(
+                x=df[~flagged][col],
+                y=neg_log_p[~flagged],
+                mode="markers",
+                marker={"size": 5, "color": CLR_GOOD, "opacity": 0.7},
+                name="Pass QC",
+                showlegend=(col_idx == 1),
+                legendgroup="good",
+                hovertext=df[~flagged]["locus"],
+                hovertemplate=f"<b>%{{hovertext}}</b><br>{title}: %{{x:.4f}}<br>–log₁₀(p): %{{y:.1f}}<extra></extra>",
             ),
-        ), row=1, col=col_idx)
+            row=1,
+            col=col_idx,
+        )
+        # Flagged sites
+        fig.add_trace(
+            go.Scatter(
+                x=df[flagged][col],
+                y=neg_log_p[flagged],
+                mode="markers",
+                marker={"size": 7, "color": CLR_WARN, "symbol": "x", "opacity": 0.9},
+                name="QC Flag",
+                showlegend=(col_idx == 1),
+                legendgroup="flag",
+                hovertext=df[flagged]["locus"],
+                customdata=flag_arr[flagged],
+                hovertemplate=(
+                    f"<b>%{{hovertext}}</b><br>{title}: %{{x:.4f}}<br>"
+                    "–log₁₀(p): %{y:.1f}<br>"
+                    "⚠ %{customdata}<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=col_idx,
+        )
         fig.update_xaxes(title_text=title, row=1, col=col_idx)
 
     # Add p=0.05 threshold line to each subplot
     threshold = -np.log10(0.05)
     for i in range(1, 4):
-        fig.add_hline(y=threshold, line_dash="dash", line_color=TEXT_SECONDARY,
-                      row=1, col=i)
+        fig.add_hline(y=threshold, line_dash="dash", line_color=TEXT_SECONDARY, row=1, col=i)
 
     fig.update_yaxes(title_text="–log₁₀(p-value)", row=1, col=1)
     fig.update_layout(
@@ -351,8 +378,14 @@ def _card_entropy(df: pd.DataFrame) -> go.Figure:
         )
     )
     mx = max(df["normal_entropy"].max(), df["tumor_entropy"].max()) * 1.05
-    fig.add_shape(type="line", x0=0, y0=0, x1=mx, y1=mx,
-                  line={"dash": "dot", "color": TEXT_SECONDARY, "width": 1})
+    fig.add_shape(
+        type="line",
+        x0=0,
+        y0=0,
+        x1=mx,
+        y1=mx,
+        line={"dash": "dot", "color": TEXT_SECONDARY, "width": 1},
+    )
     fig.update_layout(
         title="Entropy Scatter",
         xaxis_title="Normal Entropy",
@@ -379,24 +412,30 @@ def _card_quality_metrics(df: pd.DataFrame) -> list[go.Figure]:
             (normal_vals, "Normal", CLR_NORMAL),
             (tumor_vals, "Tumor", CLR_TUMOR),
         ]:
-            fig.add_trace(go.Box(
-                y=vals, name=label,
-                marker_color=clr, line_color=clr,
-                boxmean="sd", opacity=0.7,
-                hoverinfo="y+name",
-            ))
-            fig.add_trace(go.Scatter(
-                y=vals,
-                x=[label] * len(vals),
-                mode="markers",
-                marker={"size": 4, "color": clr, "opacity": 0.35},
-                showlegend=False,
-                hovertext=df["locus"],
-                hovertemplate=(
-                    "<b>%{hovertext}</b><br>"
-                    f"{y_label}: %{{y:.2f}}<extra></extra>"
-                ),
-            ))
+            fig.add_trace(
+                go.Box(
+                    y=vals,
+                    name=label,
+                    marker_color=clr,
+                    line_color=clr,
+                    boxmean="sd",
+                    opacity=0.7,
+                    hoverinfo="y+name",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    y=vals,
+                    x=[label] * len(vals),
+                    mode="markers",
+                    marker={"size": 4, "color": clr, "opacity": 0.35},
+                    showlegend=False,
+                    hovertext=df["locus"],
+                    hovertemplate=(
+                        "<b>%{hovertext}</b><br>" f"{y_label}: %{{y:.2f}}<extra></extra>"
+                    ),
+                )
+            )
 
         fig.update_layout(
             title=title,
@@ -411,17 +450,25 @@ def _card_quality_metrics(df: pd.DataFrame) -> list[go.Figure]:
         return fig
 
     # 1 ─ MapQ
-    figs.append(_box_strip(
-        df["normal_mapq_mean"], df["tumor_mapq_mean"],
-        "Mapping Quality (MapQ)", "Mean MapQ",
-    ))
+    figs.append(
+        _box_strip(
+            df["normal_mapq_mean"],
+            df["tumor_mapq_mean"],
+            "Mapping Quality (MapQ)",
+            "Mean MapQ",
+        )
+    )
 
     # 2 ─ Base Quality
     if "normal_bq_mean" in df.columns:
-        figs.append(_box_strip(
-            df["normal_bq_mean"], df["tumor_bq_mean"],
-            "Base Quality", "Mean Base Quality",
-        ))
+        figs.append(
+            _box_strip(
+                df["normal_bq_mean"],
+                df["tumor_bq_mean"],
+                "Base Quality",
+                "Mean Base Quality",
+            )
+        )
 
     # 3 ─ Coverage (log₁₀) — custom build with real coverage on hover
     fig_cov = go.Figure()
@@ -430,26 +477,33 @@ def _card_quality_metrics(df: pd.DataFrame) -> list[go.Figure]:
         (df["tumor_total_coverage"], "Tumor", CLR_TUMOR),
     ]:
         log_vals = np.log10(raw_vals.clip(lower=1))
-        fig_cov.add_trace(go.Box(
-            y=log_vals, name=label,
-            marker_color=clr, line_color=clr,
-            boxmean="sd", opacity=0.7,
-            hoverinfo="y+name",
-        ))
-        fig_cov.add_trace(go.Scatter(
-            y=log_vals,
-            x=[label] * len(log_vals),
-            mode="markers",
-            marker={"size": 4, "color": clr, "opacity": 0.35},
-            showlegend=False,
-            hovertext=df["locus"],
-            customdata=raw_vals.values,
-            hovertemplate=(
-                "<b>%{hovertext}</b><br>"
-                "log₁₀(Cov): %{y:.2f}<br>"
-                "Coverage: %{customdata:,.0f}<extra></extra>"
-            ),
-        ))
+        fig_cov.add_trace(
+            go.Box(
+                y=log_vals,
+                name=label,
+                marker_color=clr,
+                line_color=clr,
+                boxmean="sd",
+                opacity=0.7,
+                hoverinfo="y+name",
+            )
+        )
+        fig_cov.add_trace(
+            go.Scatter(
+                y=log_vals,
+                x=[label] * len(log_vals),
+                mode="markers",
+                marker={"size": 4, "color": clr, "opacity": 0.35},
+                showlegend=False,
+                hovertext=df["locus"],
+                customdata=raw_vals.values,
+                hovertemplate=(
+                    "<b>%{hovertext}</b><br>"
+                    "log₁₀(Cov): %{y:.2f}<br>"
+                    "Coverage: %{customdata:,.0f}<extra></extra>"
+                ),
+            )
+        )
     fig_cov.update_layout(
         title="Read Depth (log₁₀)",
         yaxis_title="log₁₀(Coverage)",
@@ -469,16 +523,26 @@ def _card_distance_histograms(df: pd.DataFrame) -> go.Figure:
     """Card 6 — Overlapping L1 / L2 / Wasserstein distributions."""
     fig = go.Figure()
     y_offsets = [-20, -40, -60]
-    for idx, (col, name, clr) in enumerate([
-        ("l1_distance", "L1", ACCENT),
-        ("l2_distance", "L2", CLR_SIG),
-        ("wasserstein_distance", "Wasserstein", CLR_GOOD),
-    ]):
-        fig.add_trace(go.Histogram(
-            x=df[col], name=name, marker_color=clr, opacity=0.55, nbinsx=30,
-        ))
+    for idx, (col, name, clr) in enumerate(
+        [
+            ("l1_distance", "L1", ACCENT),
+            ("l2_distance", "L2", CLR_SIG),
+            ("wasserstein_distance", "Wasserstein", CLR_GOOD),
+        ]
+    ):
+        fig.add_trace(
+            go.Histogram(
+                x=df[col],
+                name=name,
+                marker_color=clr,
+                opacity=0.55,
+                nbinsx=30,
+            )
+        )
         fig.add_vline(
-            x=df[col].mean(), line_dash="dash", line_color=clr,
+            x=df[col].mean(),
+            line_dash="dash",
+            line_color=clr,
             annotation_text=f"{name} μ={df[col].mean():.3f}",
             annotation_font_color=clr,
             annotation_yshift=y_offsets[idx],
@@ -508,7 +572,8 @@ def _card_insert_size(df: pd.DataFrame) -> go.Figure:
         return None  # type: ignore[return-value]
 
     fig = make_subplots(
-        rows=1, cols=len(available),
+        rows=1,
+        cols=len(available),
         subplot_titles=[lbl for _, _, lbl in available],
         horizontal_spacing=0.06,
     )
@@ -518,14 +583,25 @@ def _card_insert_size(df: pd.DataFrame) -> go.Figure:
             (df[n_col], "Normal", CLR_NORMAL),
             (df[t_col], "Tumor", CLR_TUMOR),
         ]:
-            fig.add_trace(go.Histogram(
-                x=vals, name=name, marker_color=clr, opacity=0.55, nbinsx=30,
-                showlegend=(col_idx == 1),
-                legendgroup=name,
-            ), row=1, col=col_idx)
+            fig.add_trace(
+                go.Histogram(
+                    x=vals,
+                    name=name,
+                    marker_color=clr,
+                    opacity=0.55,
+                    nbinsx=30,
+                    showlegend=(col_idx == 1),
+                    legendgroup=name,
+                ),
+                row=1,
+                col=col_idx,
+            )
             fig.add_vline(
-                x=vals.mean(), line_dash="dash", line_color=clr,
-                row=1, col=col_idx,
+                x=vals.mean(),
+                line_dash="dash",
+                line_color=clr,
+                row=1,
+                col=col_idx,
             )
         fig.update_xaxes(title_text="Insert Size (bp)", row=1, col=col_idx)
 
@@ -554,9 +630,7 @@ def _quality_badge(row: pd.Series) -> str:
     mapq = row["tumor_mapq_mean"]
     bq = row.get("tumor_bq_mean", 99)
     cov = row["tumor_total_coverage"]
-    insert_delta = abs(
-        row.get("tumor_insert_mean_alt", 0) - row.get("tumor_insert_mean_ref", 0)
-    )
+    insert_delta = abs(row.get("tumor_insert_mean_alt", 0) - row.get("tumor_insert_mean_ref", 0))
 
     flags: list[str] = []
     if mapq < QC_THRESHOLDS["mapq"]:
@@ -607,19 +681,42 @@ def _build_site_explorer(df: pd.DataFrame) -> go.Figure:
     buttons = []
 
     # Add 3 always-visible legend-only traces so legend persists across site switches
-    fig.add_trace(go.Bar(
-        x=[None], y=[None], name="Normal", marker_color=CLR_NORMAL,
-        opacity=0.75, showlegend=True, legendgroup="Normal", visible=True,
-    ))
-    fig.add_trace(go.Bar(
-        x=[None], y=[None], name="Tumor", marker_color=CLR_TUMOR,
-        opacity=0.85, showlegend=True, legendgroup="Tumor", visible=True,
-    ))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="lines",
-        line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
-        name="Ref", showlegend=True, legendgroup="Ref", visible=True,
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=[None],
+            y=[None],
+            name="Normal",
+            marker_color=CLR_NORMAL,
+            opacity=0.75,
+            showlegend=True,
+            legendgroup="Normal",
+            visible=True,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=[None],
+            y=[None],
+            name="Tumor",
+            marker_color=CLR_TUMOR,
+            opacity=0.85,
+            showlegend=True,
+            legendgroup="Tumor",
+            visible=True,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="lines",
+            line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
+            name="Ref",
+            showlegend=True,
+            legendgroup="Ref",
+            visible=True,
+        )
+    )
     n_legend_traces = 3
 
     for i, row in df_s.iterrows():
@@ -639,34 +736,57 @@ def _build_site_explorer(df: pd.DataFrame) -> go.Figure:
         visible = i == 0
 
         # Trace 1: Normal bars
-        fig.add_trace(go.Bar(
-            x=x_list, y=n_norm_l, name="Normal", marker_color=CLR_NORMAL,
-            opacity=0.75, visible=visible, customdata=n_raw_l,
-            hovertemplate="Normal<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
-            showlegend=False,
-            legendgroup="Normal",
-        ))
+        fig.add_trace(
+            go.Bar(
+                x=x_list,
+                y=n_norm_l,
+                name="Normal",
+                marker_color=CLR_NORMAL,
+                opacity=0.75,
+                visible=visible,
+                customdata=n_raw_l,
+                hovertemplate="Normal<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
+                showlegend=False,
+                legendgroup="Normal",
+            )
+        )
         # Trace 2: Tumor bars
-        fig.add_trace(go.Bar(
-            x=x_list, y=t_norm_l, name="Tumor", marker_color=CLR_TUMOR,
-            opacity=0.85, visible=visible, customdata=t_raw_l,
-            hovertemplate="Tumor<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
-            showlegend=False,
-            legendgroup="Tumor",
-        ))
+        fig.add_trace(
+            go.Bar(
+                x=x_list,
+                y=t_norm_l,
+                name="Tumor",
+                marker_color=CLR_TUMOR,
+                opacity=0.85,
+                visible=visible,
+                customdata=t_raw_l,
+                hovertemplate="Tumor<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
+                showlegend=False,
+                legendgroup="Tumor",
+            )
+        )
         # Trace 3: Ref line (vertical scatter at repeat_count)
-        max_y = max(float(n_norm.max()) if len(n_norm) else 0,
-                    float(t_norm.max()) if len(t_norm) else 0, 0.01) * 1.1
-        fig.add_trace(go.Scatter(
-            x=[ref_count, ref_count], y=[0, max_y],
-            mode="lines",
-            line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
-            name="Ref",
-            visible=visible,
-            showlegend=False,
-            legendgroup="Ref",
-            hovertemplate=f"Reference: {ref_count}x<extra></extra>",
-        ))
+        max_y = (
+            max(
+                float(n_norm.max()) if len(n_norm) else 0,
+                float(t_norm.max()) if len(t_norm) else 0,
+                0.01,
+            )
+            * 1.1
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[ref_count, ref_count],
+                y=[0, max_y],
+                mode="lines",
+                line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
+                name="Ref",
+                visible=visible,
+                showlegend=False,
+                legendgroup="Ref",
+                hovertemplate=f"Reference: {ref_count}x<extra></extra>",
+            )
+        )
 
         # Build visibility array: first 3 legend traces always True
         vis = [True] * n_legend_traces + [False] * (n_sites * traces_per_site)
@@ -674,35 +794,45 @@ def _build_site_explorer(df: pd.DataFrame) -> go.Figure:
         vis[n_legend_traces + traces_per_site * i + 1] = True
         vis[n_legend_traces + traces_per_site * i + 2] = True
 
-        buttons.append({
-            "label": row["locus"],
-            "method": "update",
-            "args": [
-                {"visible": vis},
-                {"title": ""},
-                {
-                    "_locus": row["locus"],
-                    "_l1": float(row["l1_distance"]),
-                    "_l2": float(row["l2_distance"]),
-                    "_wass": float(row["wasserstein_distance"]),
-                    "_pval": float(row["p_value"]),
-                    "_entropy": float(row["entropy_diff"]),
-                    "_t_cov": int(row["tumor_total_coverage"]),
-                    "_n_cov": int(row["normal_total_coverage"]),
-                    "_t_mapq": float(row["tumor_mapq_mean"]),
-                    "_t_bq": float(row.get("tumor_bq_mean", 0)),
-                    "_badge": _quality_badge(row),
-                },
-            ],
-        })
+        buttons.append(
+            {
+                "label": row["locus"],
+                "method": "update",
+                "args": [
+                    {"visible": vis},
+                    {"title": ""},
+                    {
+                        "_locus": row["locus"],
+                        "_l1": float(row["l1_distance"]),
+                        "_l2": float(row["l2_distance"]),
+                        "_wass": float(row["wasserstein_distance"]),
+                        "_pval": float(row["p_value"]),
+                        "_entropy": float(row["entropy_diff"]),
+                        "_t_cov": int(row["tumor_total_coverage"]),
+                        "_n_cov": int(row["normal_total_coverage"]),
+                        "_t_mapq": float(row["tumor_mapq_mean"]),
+                        "_t_bq": float(row.get("tumor_bq_mean", 0)),
+                        "_badge": _quality_badge(row),
+                    },
+                ],
+            }
+        )
 
     fig.update_layout(
-        updatemenus=[{
-            "active": 0, "buttons": buttons, "visible": False,
-            "x": 0.0, "xanchor": "left", "y": 1.22, "yanchor": "top",
-            "bgcolor": BG_CARD_BORDER, "font": {"color": TEXT_PRIMARY, "size": 11},
-            "pad": {"r": 10, "t": 10},
-        }],
+        updatemenus=[
+            {
+                "active": 0,
+                "buttons": buttons,
+                "visible": False,
+                "x": 0.0,
+                "xanchor": "left",
+                "y": 1.22,
+                "yanchor": "top",
+                "bgcolor": BG_CARD_BORDER,
+                "font": {"color": TEXT_PRIMARY, "size": 11},
+                "pad": {"r": 10, "t": 10},
+            }
+        ],
         barmode="group",
         bargap=0.15,
         bargroupgap=0.05,
@@ -1461,7 +1591,7 @@ document.addEventListener('DOMContentLoaded', function() {
 def generate_html_report(
     df: pd.DataFrame,
     output_path: str,
-    prediction_result: Optional[dict] = None,
+    prediction_result: dict | None = None,
     top_n: int = 99999,
 ) -> None:
     """Assemble the full interactive HTML report."""
@@ -1549,7 +1679,9 @@ def generate_html_report(
     if fig_insert_size is not None:
         insert_html = f'<div class="card card-full">{fig_insert_size.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)}</div>'
 
-    explorer_html = fig_explorer.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)
+    explorer_html = fig_explorer.to_html(
+        full_html=False, include_plotlyjs=False, config=_plotly_cfg
+    )
 
     # Compute max values for progress bar formatters
     max_l1 = float(df["l1_distance"].max()) if len(df) else 1.0

@@ -55,4 +55,3 @@ def test_generate_html_report(dummy_feature_tsv, tmp_path):
     assert "STRiDE MSI Quality Control Report" in content
     assert "Site Explorer" in content
     assert "stride-table" in content  # Tabulator data table
-
