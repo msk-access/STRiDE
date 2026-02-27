@@ -122,7 +122,7 @@ def run_end_to_end_single(
             if len(df_preds) > 0:
                 pred_info = {
                     "msi_status": df_preds.iloc[0]["MSI_class_predicted"],
-                    "msi_score": df_preds.iloc[0]["msi_score"]
+                    "msi_score": df_preds.iloc[0]["msi_score"],
                 }
 
             logger.info("Generating QC report: %s", qc_path)
@@ -139,7 +139,7 @@ def run_end_to_end_single(
         "sample_id": sid,
         "features_tsv": feat_tsv,
         "prediction_txt": out_paths[0],
-        "qc_report": qc_path
+        "qc_report": qc_path,
     }
 
 
@@ -220,7 +220,7 @@ def run_end_to_end_batch(
                 if not row_match.empty:
                     pred_info = {
                         "msi_status": row_match.iloc[0]["MSI_class_predicted"],
-                        "msi_score": row_match.iloc[0]["msi_score"]
+                        "msi_score": row_match.iloc[0]["msi_score"],
                     }
 
                 generate_report(feat, qc_path, prediction_result=pred_info)

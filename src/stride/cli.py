@@ -333,11 +333,18 @@ def run(
 # stride qc
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def qc(
-    feature_tsv: str = typer.Option(..., "--feature-tsv", help="Feature TSV from stride run or features."),
-    prediction: Optional[str] = typer.Option(None, "--prediction", help="Prediction output TSV to extract MSI status."),
-    output: str = typer.Option("qc_report.html", "--output", help="Output path for the HTML report."),
+    feature_tsv: str = typer.Option(
+        ..., "--feature-tsv", help="Feature TSV from stride run or features."
+    ),
+    prediction: Optional[str] = typer.Option(
+        None, "--prediction", help="Prediction output TSV to extract MSI status."
+    ),
+    output: str = typer.Option(
+        "qc_report.html", "--output", help="Output path for the HTML report."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """Generate an interactive HTML QC report for a sample."""
@@ -358,7 +365,7 @@ def qc(
             if not df_pred.empty:
                 pred_info = {
                     "msi_status": df_pred.iloc[0]["MSI_class_predicted"],
-                    "msi_score": df_pred.iloc[0]["msi_score"]
+                    "msi_score": df_pred.iloc[0]["msi_score"],
                 }
         except Exception as e:
             logger.warning(f"Failed to parse prediction file: {e}")
