@@ -82,7 +82,8 @@ class MSIProfileGenerator:
 
             l1_dist = np.sum(np.abs(norm_tumor - norm_normal))
             l2_dist = np.sqrt(np.sum((norm_tumor - norm_normal) ** 2))
-            wass_dist = wasserstein_distance(norm_tumor, norm_normal)
+            bins = np.arange(self.max_repeat_bins)
+            wass_dist = wasserstein_distance(bins, bins, u_weights=norm_tumor, v_weights=norm_normal)
 
             allele_thresholds = [1, 5, 10, 15, 20, 25, 30]
             allele_diffs = {
@@ -95,6 +96,9 @@ class MSIProfileGenerator:
                 f"n_alleles_diff_norm_{int(thresh * 100)}": np.sum(norm_tumor >= thresh) - np.sum(norm_normal >= thresh)
                 for thresh in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06]
             }
+
+            def safe_mean(values):
+                return float(np.mean(values)) if values else np.nan
 
             return {
                 "chrom": chrom,
@@ -110,16 +114,16 @@ class MSIProfileGenerator:
                 "normal_norm_freqs": norm_normal.tolist(),
                 "tumor_total_coverage": tumor_total,
                 "normal_total_coverage": normal_total,
-                "tumor_mapq_mean": np.mean(tumor_mapq) if tumor_mapq else 0,
-                "normal_mapq_mean": np.mean(normal_mapq) if normal_mapq else 0,
-                "tumor_bq_mean": np.mean(tumor_bq) if tumor_bq else 0,
-                "normal_bq_mean": np.mean(normal_bq) if normal_bq else 0,
-                "tumor_insert_mean_all": np.mean(tumor_insert_all) if tumor_insert_all else 0,
-                "normal_insert_mean_all": np.mean(normal_insert_all) if normal_insert_all else 0,
-                "tumor_insert_mean_ref": np.mean(tumor_insert_ref) if tumor_insert_ref else 0,
-                "normal_insert_mean_ref": np.mean(normal_insert_ref) if normal_insert_ref else 0,
-                "tumor_insert_mean_alt": np.mean(tumor_insert_alt) if tumor_insert_alt else 0,
-                "normal_insert_mean_alt": np.mean(normal_insert_alt) if normal_insert_alt else 0,
+                "tumor_mapq_mean": safe_mean(tumor_mapq),
+                "normal_mapq_mean": safe_mean(normal_mapq),
+                "tumor_bq_mean": safe_mean(tumor_bq),
+                "normal_bq_mean": safe_mean(normal_bq),
+                "tumor_insert_mean_all": safe_mean(tumor_insert_all),
+                "normal_insert_mean_all": safe_mean(normal_insert_all),
+                "tumor_insert_mean_ref": safe_mean(tumor_insert_ref),
+                "normal_insert_mean_ref": safe_mean(normal_insert_ref),
+                "tumor_insert_mean_alt": safe_mean(tumor_insert_alt),
+                "normal_insert_mean_alt": safe_mean(normal_insert_alt),
                 "tumor_entropy": tumor_entropy_val,
                 "normal_entropy": normal_entropy_val,
                 "entropy_diff": tumor_entropy_val - normal_entropy_val,
