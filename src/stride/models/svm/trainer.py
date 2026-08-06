@@ -1,30 +1,28 @@
-import json
-import joblib
-import pickle
 import copy
+import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional
+
+import joblib
 import numpy as np
 import pandas as pd
-from typing import List, Optional, Tuple, Dict, Any
-
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 from sklearn.linear_model import SGDClassifier
-from sklearn.utils.class_weight import compute_class_weight
-from sklearn.utils import shuffle as sk_shuffle
 from sklearn.model_selection import StratifiedKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.utils import shuffle as sk_shuffle
+from sklearn.utils.class_weight import compute_class_weight
 
 from stride.core.base import BaseTrainer
 from stride.core.dataset import build_matrix, load_sfs_sign_map
 from stride.core.metrics import (
-    set_seed,
-    release_runtime_memory,
     confusion_counts,
     metrics_from_counts,
-    safe_roc_auc,
+    release_runtime_memory,
     safe_pr_auc,
-    compute_metrics
+    safe_roc_auc,
+    set_seed,
 )
 from stride.core.qc import select_decision_threshold
 
@@ -41,7 +39,7 @@ class SVMTrainer(BaseTrainer):
         min_spec: float = 0.95,
         rank_by: str = "sensitivity",
         sfs_tsv: Optional[str] = None,
-        sfs_rank1_only: bool = True
+        sfs_rank1_only: bool = True,
     ):
         self.cv_folds = cv_folds
         self.cv_seed = cv_seed
@@ -121,10 +119,10 @@ class SVMTrainer(BaseTrainer):
         impact_records: pd.DataFrame,
         access_records: pd.DataFrame,
         test_records: pd.DataFrame,
-        metric_pool: List[str],
+        metric_pool: list[str],
         outdir: Path,
-        **kwargs
-    ) -> Dict[str, Any]:
+        **kwargs,
+    ) -> dict[str, Any]:
         """
         Train and evaluate the SVM incremental model pipeline.
         """
@@ -144,7 +142,7 @@ class SVMTrainer(BaseTrainer):
             expected_sites=None,
             max_sites=0,
             seed=self.cv_seed,
-            sign_map=sign_map
+            sign_map=sign_map,
         )
         X_access, y_access, _ = build_matrix(
             access_records,
@@ -152,7 +150,7 @@ class SVMTrainer(BaseTrainer):
             expected_sites=expected_sites,
             max_sites=0,
             seed=self.cv_seed,
-            sign_map=sign_map
+            sign_map=sign_map,
         )
         X_test, y_test, _ = build_matrix(
             test_records,
@@ -160,7 +158,7 @@ class SVMTrainer(BaseTrainer):
             expected_sites=expected_sites,
             max_sites=0,
             seed=self.cv_seed,
-            sign_map=sign_map
+            sign_map=sign_map,
         )
 
         # Retain common columns
@@ -172,22 +170,26 @@ class SVMTrainer(BaseTrainer):
         X_test = X_test[common_cols].fillna(0.0)
         feature_columns = list(common_cols)
 
-        print(f"Matrix shape: impact={X_impact.shape}, access={X_access.shape}, test={X_test.shape}")
+        print(
+            f"Matrix shape: impact={X_impact.shape}, access={X_access.shape}, test={X_test.shape}"
+        )
 
         # Train BASE model on Impact once
         print("Training base model on Impact cohort...")
-        base_model, classes = self._train_base_on_impact(X_impact, y_impact, random_state=self.cv_seed)
+        base_model, classes = self._train_base_on_impact(
+            X_impact, y_impact, random_state=self.cv_seed
+        )
 
         # Cross Validation Setup on Access
         cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.cv_seed)
         oof_scores = np.zeros(len(X_access))
 
         print(f"Starting {self.cv_folds}-fold CV on Access...")
-        for fold, (tr_idx, val_idx) in enumerate(cv.split(X_access, y_access), start=1):
+        for _fold, (tr_idx, val_idx) in enumerate(cv.split(X_access, y_access), start=1):
             X_tr = X_access.iloc[tr_idx]
             y_tr = y_access[tr_idx]
             X_va = X_access.iloc[val_idx]
-            
+
             # Copy base weights to ensure starting from same fixed Impact pretrained model
             fold_model = copy.deepcopy(base_model)
             fold_model = self._incremental_update_on_access(
@@ -198,7 +200,7 @@ class SVMTrainer(BaseTrainer):
                 epochs=self.incremental_epochs,
                 batch_size=self.incremental_batch_size,
                 update_scaler=self.update_scaler,
-                incremental_weight=self.incremental_weight
+                incremental_weight=self.incremental_weight,
             )
 
             # Predict scores on validation fold
@@ -209,7 +211,9 @@ class SVMTrainer(BaseTrainer):
         best_threshold, best_sens, best_spec = select_decision_threshold(
             oof_scores, y_access, min_spec=self.min_spec, rank_by=self.rank_by
         )
-        print(f"Selected threshold: {best_threshold:.4f} (OOF Sens: {best_sens:.4f}, Spec: {best_spec:.4f})")
+        print(
+            f"Selected threshold: {best_threshold:.4f} (OOF Sens: {best_sens:.4f}, Spec: {best_spec:.4f})"
+        )
 
         # Refit final model on all data (Impact + Access)
         print("Refitting final incremental model on all Access data...")
@@ -222,7 +226,7 @@ class SVMTrainer(BaseTrainer):
             epochs=self.incremental_epochs,
             batch_size=self.incremental_batch_size,
             update_scaler=self.update_scaler,
-            incremental_weight=self.incremental_weight
+            incremental_weight=self.incremental_weight,
         )
 
         # Evaluate on Test data
@@ -234,15 +238,17 @@ class SVMTrainer(BaseTrainer):
         test_roc = safe_roc_auc(y_test, p_test)
         test_pr = safe_pr_auc(y_test, p_test)
 
-        print(f"Test Score: ROC-AUC={test_roc:.4f}, Spec={test_met['specificity']:.4f}, Sens={test_met['sensitivity']:.4f}")
+        print(
+            f"Test Score: ROC-AUC={test_roc:.4f}, Spec={test_met['specificity']:.4f}, Sens={test_met['sensitivity']:.4f}"
+        )
 
         # Save all trained model components
         print(f"Saving outputs to {outdir}...")
-        
+
         # Save base model & final incremental model
         joblib.dump(base_model, outdir / "svm_base.joblib")
         joblib.dump(final_model, outdir / "svm_incremental.joblib")
-        
+
         # Save feature column lists and site IDs
         (outdir / "feature_columns_best_combo.txt").write_text("\n".join(feature_columns) + "\n")
         (outdir / "site_ids.txt").write_text("\n".join(expected_sites) + "\n")
@@ -269,10 +275,10 @@ class SVMTrainer(BaseTrainer):
                 "fp": int(test_fp),
                 "tn": int(test_tn),
                 "fn": int(test_fn),
-                **test_met
+                **test_met,
             },
             "expected_sites_count": len(expected_sites),
-            "feature_columns_count": len(feature_columns)
+            "feature_columns_count": len(feature_columns),
         }
 
         with open(outdir / "artifacts.json", "w") as f:

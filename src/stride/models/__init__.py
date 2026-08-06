@@ -7,9 +7,9 @@ and factory functions for creating trainers and predictors.
 import importlib.resources
 import logging
 
-logger = logging.getLogger(__name__)
+from .svm import SVMPredictor, SVMTrainer
 
-from .svm import SVMTrainer, SVMPredictor
+logger = logging.getLogger(__name__)
 
 
 def get_default_model_path() -> str:
@@ -44,6 +44,7 @@ def get_trainer(method: str = "svm", **kwargs):
     elif method_key == "tabpfn":
         try:
             from .tabpfn import TabPFNTrainer
+
             return TabPFNTrainer(**kwargs)
         except ImportError as err:
             raise ImportError(
@@ -64,6 +65,7 @@ def get_predictor(method: str = "svm", **kwargs):
     elif method_key == "tabpfn":
         try:
             from .tabpfn import TabPFNPredictor
+
             return TabPFNPredictor(**kwargs)
         except ImportError as err:
             raise ImportError(
@@ -81,4 +83,3 @@ __all__ = [
     "SVMTrainer",
     "SVMPredictor",
 ]
-

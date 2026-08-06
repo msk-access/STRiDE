@@ -1,6 +1,8 @@
+from typing import Any, Optional
+
 import numpy as np
-from typing import Dict, Any, Tuple, Optional
-from stride.core.metrics import confusion_counts, metrics_from_counts, compute_metrics
+
+from stride.core.metrics import compute_metrics, confusion_counts, metrics_from_counts
 
 
 def select_decision_threshold(
@@ -8,8 +10,8 @@ def select_decision_threshold(
     y_true: np.ndarray,
     min_spec: float = 0.95,
     rank_by: str = "sensitivity",
-    grid_steps: int = 200
-) -> Tuple[float, float, float]:
+    grid_steps: int = 200,
+) -> tuple[float, float, float]:
     """
     Shared threshold scanning calculation:
     Scans candidate decision thresholds on cross-validation out-of-fold scores
@@ -65,10 +67,8 @@ def select_decision_threshold(
 
 
 def evaluate_model_performance(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    scores: Optional[np.ndarray] = None
-) -> Dict[str, Any]:
+    y_true: np.ndarray, y_pred: np.ndarray, scores: Optional[np.ndarray] = None
+) -> dict[str, Any]:
     """
     Perform comprehensive quality control and metric evaluation.
     """

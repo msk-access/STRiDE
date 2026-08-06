@@ -6,7 +6,7 @@ and predicts MSI/MSS status using a trained machine learning model.
 
 __version__ = "0.1.0"
 
-from .models import get_trainer, get_predictor, SVMTrainer, SVMPredictor
+from .models import SVMPredictor, SVMTrainer, get_predictor, get_trainer
 
 __all__ = [
     "__version__",
@@ -15,4 +15,3 @@ __all__ = [
     "SVMTrainer",
     "SVMPredictor",
 ]
-
