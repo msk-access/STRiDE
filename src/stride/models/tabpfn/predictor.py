@@ -1,14 +1,14 @@
-import joblib
 import pickle
+from pathlib import Path
+from typing import Any, Optional, Union
+
+import joblib
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any, Union
 
 from stride.core.base import BasePredictor
 from stride.core.dataset import process_single_sample
 from stride.utils.torch_patches import apply_cpu_patches, force_cpu
-
 
 DEFAULT_TABPFN_DIR = Path(__file__).parent
 
@@ -20,7 +20,7 @@ class TabPFNPredictor(BasePredictor):
         imputer_path: Optional[Union[str, Path]] = None,
         columns_path: Optional[Union[str, Path]] = None,
         threshold: float = 0.660658,
-        device: str = "cpu"
+        device: str = "cpu",
     ):
         if model_path is None:
             model_path = DEFAULT_TABPFN_DIR / "tabpfn_finetuned.joblib"
@@ -44,7 +44,7 @@ class TabPFNPredictor(BasePredictor):
         # 1) Load expected feature columns
         if not self.columns_path.exists():
             raise FileNotFoundError(f"Columns path does not exist: {self.columns_path}")
-        with open(self.columns_path, "r") as f:
+        with open(self.columns_path) as f:
             self.expected_columns = [line.strip() for line in f if line.strip()]
 
         # 2) Load SimpleImputer
@@ -75,7 +75,7 @@ class TabPFNPredictor(BasePredictor):
             if hasattr(self.model, "model") and hasattr(self.model.model, "to"):
                 self.model.model = self.model.model.to("cpu")
 
-    def predict_sample(self, tsv_path: Union[str, Path]) -> Dict[str, Any]:
+    def predict_sample(self, tsv_path: Union[str, Path]) -> dict[str, Any]:
         """Evaluate a single sample TSV file."""
         tsv_path = Path(tsv_path)
         if not tsv_path.exists():
@@ -98,13 +98,11 @@ class TabPFNPredictor(BasePredictor):
             "file_path": str(tsv_path.resolve()),
             "p_msi": prob,
             "y_pred": pred_class,
-            "prediction": pred_label
+            "prediction": pred_label,
         }
 
     def predict_batch(
-        self,
-        tsv_paths: List[Union[str, Path]],
-        output_tsv: Optional[Union[str, Path]] = None
+        self, tsv_paths: list[Union[str, Path]], output_tsv: Optional[Union[str, Path]] = None
     ) -> pd.DataFrame:
         """Evaluate multiple sample TSV files."""
         results = []
@@ -114,16 +112,18 @@ class TabPFNPredictor(BasePredictor):
                 res = self.predict_sample(path)
                 results.append(res)
             except Exception as e:
-                results.append({
-                    "sample_id": path.stem,
-                    "file_path": str(path.resolve()),
-                    "p_msi": np.nan,
-                    "y_pred": -1,
-                    "prediction": f"ERROR: {str(e)}"
-                })
+                results.append(
+                    {
+                        "sample_id": path.stem,
+                        "file_path": str(path.resolve()),
+                        "p_msi": np.nan,
+                        "y_pred": -1,
+                        "prediction": f"ERROR: {str(e)}",
+                    }
+                )
 
         df = pd.DataFrame(results)
-        
+
         if output_tsv is not None:
             output_tsv = Path(output_tsv)
             output_tsv.parent.mkdir(parents=True, exist_ok=True)
@@ -136,7 +136,7 @@ class TabPFNPredictor(BasePredictor):
         self,
         input_dir: Union[str, Path],
         file_ext: str = "tsv",
-        output_tsv: Optional[Union[str, Path]] = None
+        output_tsv: Optional[Union[str, Path]] = None,
     ) -> pd.DataFrame:
         """Scan directory for TSVs and evaluate them in batch."""
         input_dir = Path(input_dir)

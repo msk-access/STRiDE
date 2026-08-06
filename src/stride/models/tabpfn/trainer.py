@@ -1,14 +1,14 @@
 import json
-import joblib
 import pickle
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+import joblib
 import numpy as np
 import pandas as pd
-from typing import List, Optional, Tuple, Dict, Any
-
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold, StratifiedShuffleSplit
+from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedKFold, StratifiedShuffleSplit
 
 # Robust import of FinetunedTabPFNClassifier
 FinetunedTabPFNClassifier = None
@@ -23,18 +23,18 @@ except ImportError:
         except ImportError:
             pass
 
-from stride.core.base import BaseTrainer
-from stride.core.dataset import build_matrix
-from stride.core.metrics import (
-    set_seed,
-    release_runtime_memory,
+from stride.core.base import BaseTrainer  # noqa: E402
+from stride.core.dataset import build_matrix  # noqa: E402
+from stride.core.metrics import (  # noqa: E402
     confusion_counts,
     metrics_from_counts,
-    safe_roc_auc,
+    release_runtime_memory,
     safe_pr_auc,
-    compute_metrics
+    safe_roc_auc,
+    set_seed,
 )
-from stride.core.qc import select_decision_threshold
+from stride.core.qc import select_decision_threshold  # noqa: E402
+
 
 class TabPFNTrainer(BaseTrainer):
     def __init__(
@@ -46,7 +46,7 @@ class TabPFNTrainer(BaseTrainer):
         device: str = "cpu",
         refit_val_frac: float = 0.15,
         max_sites: int = 3000,
-        rank_by: str = "sensitivity"
+        rank_by: str = "sensitivity",
     ):
         self.cv_folds = cv_folds
         self.cv_repeats = cv_repeats
@@ -67,12 +67,12 @@ class TabPFNTrainer(BaseTrainer):
         impact_records: pd.DataFrame,
         access_records: pd.DataFrame,
         test_records: pd.DataFrame,
-        metric_pool: List[str],
+        metric_pool: list[str],
         outdir: Path,
         epochs: int = 30,
         learning_rate: float = 1e-5,
-        **kwargs
-    ) -> Dict[str, Any]:
+        **kwargs,
+    ) -> dict[str, Any]:
         """
         Train and evaluate the TabPFN pipeline.
         1) Build matrices for Impact, Access, and Test data.
@@ -93,21 +93,17 @@ class TabPFNTrainer(BaseTrainer):
             metric_pool,
             expected_sites=None,
             max_sites=self.max_sites,
-            seed=self.cv_seed
+            seed=self.cv_seed,
         )
         X_access, y_access, _ = build_matrix(
             access_records,
             metric_pool,
             expected_sites=expected_sites,
             max_sites=0,
-            seed=self.cv_seed
+            seed=self.cv_seed,
         )
         X_test, y_test, _ = build_matrix(
-            test_records,
-            metric_pool,
-            expected_sites=expected_sites,
-            max_sites=0,
-            seed=self.cv_seed
+            test_records, metric_pool, expected_sites=expected_sites, max_sites=0, seed=self.cv_seed
         )
 
         # Retain common columns
@@ -119,8 +115,10 @@ class TabPFNTrainer(BaseTrainer):
         X_test = X_test[common_cols]
         feature_columns = list(common_cols)
 
-        print(f"Matrix shape: impact={X_impact.shape}, access={X_access.shape}, test={X_test.shape}")
-        
+        print(
+            f"Matrix shape: impact={X_impact.shape}, access={X_access.shape}, test={X_test.shape}"
+        )
+
         # Fit Imputer
         imputer = SimpleImputer(strategy="median")
         X_impact_imp = imputer.fit_transform(X_impact).astype(np.float32)
@@ -129,7 +127,9 @@ class TabPFNTrainer(BaseTrainer):
 
         # Cross Validation Setup
         if self.cv_repeats > 1:
-            cv = RepeatedStratifiedKFold(n_splits=self.cv_folds, n_repeats=self.cv_repeats, random_state=self.cv_seed)
+            cv = RepeatedStratifiedKFold(
+                n_splits=self.cv_folds, n_repeats=self.cv_repeats, random_state=self.cv_seed
+            )
         else:
             cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.cv_seed)
 
@@ -139,22 +139,20 @@ class TabPFNTrainer(BaseTrainer):
         for tr_idx, val_idx in cv.split(X_access_imp, y_access):
             split_count += 1
             print(f"Fold {split_count} / {self.cv_folds * self.cv_repeats}")
-            
+
             # Combine Impact with Access train fold
             X_tr_fold = np.concatenate([X_impact_imp, X_access_imp[tr_idx]], axis=0)
             y_tr_fold = np.concatenate([y_impact, y_access[tr_idx]], axis=0)
-            
+
             X_va_fold = X_access_imp[val_idx]
             y_va_fold = y_access[val_idx]
 
             # Fit TabPFN Fold Model
             fold_model = FinetunedTabPFNClassifier(
-                device=self.device,
-                epochs=epochs,
-                learning_rate=learning_rate
+                device=self.device, epochs=epochs, learning_rate=learning_rate
             )
             fold_model.fit(X_tr_fold, y_tr_fold, X_val=X_va_fold, y_val=y_va_fold)
-            
+
             # Predict probabilities
             probs_va = fold_model.predict_proba(X_va_fold)[:, 1]
             if self.cv_repeats == 1:
@@ -168,7 +166,9 @@ class TabPFNTrainer(BaseTrainer):
         best_threshold, best_sens, best_spec = select_decision_threshold(
             oof_probs, y_access, min_spec=self.min_spec, rank_by=self.rank_by
         )
-        print(f"Selected threshold: {best_threshold:.4f} (OOF Sens: {best_sens:.4f}, Spec: {best_spec:.4f})")
+        print(
+            f"Selected threshold: {best_threshold:.4f} (OOF Sens: {best_sens:.4f}, Spec: {best_spec:.4f})"
+        )
 
         # 5) Refit final model on all data (Impact + Access)
         print("Refitting final model on all training data...")
@@ -182,7 +182,9 @@ class TabPFNTrainer(BaseTrainer):
 
         if 0.0 < self.refit_val_frac < 1.0:
             try:
-                sss = StratifiedShuffleSplit(n_splits=1, test_size=self.refit_val_frac, random_state=self.cv_seed)
+                sss = StratifiedShuffleSplit(
+                    n_splits=1, test_size=self.refit_val_frac, random_state=self.cv_seed
+                )
                 tr_idx, va_idx = next(sss.split(X_train_full, y_train_full))
                 refit_X = X_train_full[tr_idx]
                 refit_y = y_train_full[tr_idx]
@@ -192,14 +194,14 @@ class TabPFNTrainer(BaseTrainer):
                 print("WARNING: Could not create stratified refit split; using full train.")
 
         final_model = FinetunedTabPFNClassifier(
-            device=self.device,
-            epochs=epochs,
-            learning_rate=learning_rate
+            device=self.device, epochs=epochs, learning_rate=learning_rate
         )
-        
+
         final_model_dir = outdir / "final_model"
         final_model_dir.mkdir(parents=True, exist_ok=True)
-        final_model.fit(refit_X, refit_y, X_val=refit_val_X, y_val=refit_val_y, output_dir=final_model_dir)
+        final_model.fit(
+            refit_X, refit_y, X_val=refit_val_X, y_val=refit_val_y, output_dir=final_model_dir
+        )
 
         # 6) Evaluate on Test data
         p_test = final_model.predict_proba(X_test_imp)[:, 1]
@@ -210,11 +212,13 @@ class TabPFNTrainer(BaseTrainer):
         test_roc = safe_roc_auc(y_test, p_test)
         test_pr = safe_pr_auc(y_test, p_test)
 
-        print(f"Test Score: ROC-AUC={test_roc:.4f}, Spec={test_met['specificity']:.4f}, Sens={test_met['sensitivity']:.4f}")
+        print(
+            f"Test Score: ROC-AUC={test_roc:.4f}, Spec={test_met['specificity']:.4f}, Sens={test_met['sensitivity']:.4f}"
+        )
 
         # 7) Save all trained model components
         print(f"Saving outputs to {outdir}...")
-        
+
         # Save imputer
         joblib.dump(imputer, outdir / "imputer.joblib")
         with open(outdir / "imputer.pkl", "wb") as f:
@@ -234,7 +238,10 @@ class TabPFNTrainer(BaseTrainer):
         if hasattr(final_model, "model_") and hasattr(final_model.model_, "state_dict"):
             try:
                 import torch
-                torch.save(final_model.model_.state_dict(), outdir / "tabpfn_finetuned_state_dict.pt")
+
+                torch.save(
+                    final_model.model_.state_dict(), outdir / "tabpfn_finetuned_state_dict.pt"
+                )
             except Exception as e:
                 print(f"WARNING: Could not save torch state_dict: {e}")
 
@@ -255,10 +262,10 @@ class TabPFNTrainer(BaseTrainer):
                 "fp": int(test_fp),
                 "tn": int(test_tn),
                 "fn": int(test_fn),
-                **test_met
+                **test_met,
             },
             "expected_sites_count": len(expected_sites),
-            "feature_columns_count": len(feature_columns)
+            "feature_columns_count": len(feature_columns),
         }
 
         with open(outdir / "artifacts.json", "w") as f:

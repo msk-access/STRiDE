@@ -1,11 +1,12 @@
 import os
-import glob
+from pathlib import Path
+from typing import Optional
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any, Union
 
 ID_COLS_REQUIRED = ["chrom", "start", "repeat_unit", "repeat_count"]
+
 
 def make_site_id(df: pd.DataFrame) -> pd.Series:
     """Build unique site IDs matching the format used in training: chrom:start:repeat_unit:repeat_count."""
@@ -19,12 +20,13 @@ def make_site_id(df: pd.DataFrame) -> pd.Series:
         + df["repeat_count"].astype(str)
     )
 
+
 def sample_tsv_to_wide(
-    tsv_path: Path, 
-    features: List[str], 
-    expected_sites: Optional[List[str]] = None,
-    sign_map: Optional[Dict[str, float]] = None
-) -> Tuple[pd.Series, List[str]]:
+    tsv_path: Path,
+    features: list[str],
+    expected_sites: Optional[list[str]] = None,
+    sign_map: Optional[dict[str, float]] = None,
+) -> tuple[pd.Series, list[str]]:
     """Convert a single sample TSV to a flattened wide Series, applying sign orientation if provided."""
     df = pd.read_csv(tsv_path, sep="\t")
 
@@ -67,22 +69,21 @@ def sample_tsv_to_wide(
     wide_s.index = [f"{sid}__{feat}" for sid, feat in wide_s.index]
     return wide_s, site_ids
 
+
 def process_single_sample(
-    tsv_path: Path, 
-    expected_columns: List[str],
-    sign_map: Optional[Dict[str, float]] = None
+    tsv_path: Path, expected_columns: list[str], sign_map: Optional[dict[str, float]] = None
 ) -> pd.Series:
     """
-    Load a single sample TSV, extract features, apply optional sign map, 
+    Load a single sample TSV, extract features, apply optional sign map,
     and pivot to exactly match expected_columns schema.
     """
     df = pd.read_csv(tsv_path, sep="\t")
-    
+
     # Check required ID columns
     for col in ID_COLS_REQUIRED:
         if col not in df.columns:
             raise ValueError(f"Required column '{col}' missing in {tsv_path.name}")
-            
+
     # Parse expected columns: format is {site_id}__{feature_name}
     site_to_features = {}
     for col in expected_columns:
@@ -92,16 +93,16 @@ def process_single_sample(
             if site_id not in site_to_features:
                 site_to_features[site_id] = []
             site_to_features[site_id].append(feat)
-            
+
     expected_sites = list(site_to_features.keys())
-    features = list(set(feat for feats in site_to_features.values() for feat in feats))
-    
+    features = list({feat for feats in site_to_features.values() for feat in feats})
+
     base = pd.DataFrame({"site_id": make_site_id(df)})
-    
+
     if base["site_id"].duplicated().any():
         dup_count = base["site_id"].duplicated().sum()
         raise ValueError(f"Found {dup_count} duplicate site IDs in {tsv_path.name}")
-        
+
     for feat in features:
         if feat in df.columns:
             val_series = pd.to_numeric(df[feat], errors="coerce")
@@ -113,35 +114,38 @@ def process_single_sample(
             base[feat] = val_series
         else:
             base[feat] = np.nan
-            
+
     base = base.set_index("site_id").reindex(expected_sites).reset_index()
     base = base.sort_values("site_id")
-    
+
     wide_df = base.set_index("site_id")[features]
     try:
         wide_s = wide_df.stack(future_stack=True)
     except TypeError:
         wide_s = wide_df.stack(dropna=False)
-        
+
     wide_s.index = [f"{sid}__{feat}" for sid, feat in wide_s.index]
     wide_s = wide_s.reindex(expected_columns)
     return wide_s
 
+
 def build_matrix(
     records: pd.DataFrame,
-    features: List[str],
-    expected_sites: Optional[List[str]] = None,
+    features: list[str],
+    expected_sites: Optional[list[str]] = None,
     max_sites: int = 0,
     seed: int = 42,
-    sign_map: Optional[Dict[str, float]] = None
-) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
+    sign_map: Optional[dict[str, float]] = None,
+) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
     """Stack sample vectors from records into wide feature matrix X and target y."""
     if records.empty:
         raise ValueError("No records were provided to build_matrix().")
 
     if expected_sites is None:
         first_path = Path(records.iloc[0]["path"])
-        _, expected_sites = sample_tsv_to_wide(first_path, features, expected_sites=None, sign_map=sign_map)
+        _, expected_sites = sample_tsv_to_wide(
+            first_path, features, expected_sites=None, sign_map=sign_map
+        )
 
         if max_sites and len(expected_sites) > max_sites:
             rng = np.random.default_rng(seed)
@@ -169,16 +173,14 @@ def build_matrix(
     y = np.asarray(labels, dtype=int)
     return X, y, expected_sites
 
+
 def collect_binary_records(
-    msi_roots: List[Path], 
-    mss_roots: List[Path], 
-    cohort: str, 
-    file_ext: str = "tsv"
+    msi_roots: list[Path], mss_roots: list[Path], cohort: str, file_ext: str = "tsv"
 ) -> pd.DataFrame:
     """Scan directories for samples and construct metadata DataFrame with labels."""
-    msi_files: List[Path] = []
-    mss_files: List[Path] = []
-    
+    msi_files: list[Path] = []
+    mss_files: list[Path] = []
+
     for root in msi_roots:
         if root.is_dir():
             msi_files.extend(sorted(root.rglob(f"*.{file_ext}")))
@@ -199,26 +201,27 @@ def collect_binary_records(
     df = df.sort_values("sample_id").reset_index(drop=True)
     return df
 
+
 def empty_binary_records() -> pd.DataFrame:
     """Return an empty DataFrame matching the records schema."""
     return pd.DataFrame(columns=["sample_id", "label", "cohort", "path"])
 
-def expand_roots(roots_csv: str) -> List[Path]:
+
+def expand_roots(roots_csv: str) -> list[Path]:
     """Helper to split a comma-separated list of roots and return Path objects."""
     return [Path(r.strip()) for r in (roots_csv or "").split(",") if r.strip()]
 
+
 def collect_records_from_roots(
-    msi_roots_csv: str, 
-    mss_roots_csv: str, 
-    cohort: str, 
-    file_ext: str = "tsv"
+    msi_roots_csv: str, mss_roots_csv: str, cohort: str, file_ext: str = "tsv"
 ) -> pd.DataFrame:
     """Collect sample records from comma-separated list of root directories."""
     msi_roots = expand_roots(msi_roots_csv)
     mss_roots = expand_roots(mss_roots_csv)
     return collect_binary_records(msi_roots, mss_roots, cohort, file_ext)
 
-def load_sfs_sign_map(sfs_path: str, rank1_only: bool = True) -> Dict[str, float]:
+
+def load_sfs_sign_map(sfs_path: str, rank1_only: bool = True) -> dict[str, float]:
     """Load SFS directions mapping to determine sign multipliers."""
     if not sfs_path or not os.path.exists(sfs_path):
         return {}

@@ -1,11 +1,12 @@
-import os
 import io
+import os
 
 try:
     import torch
     import torch.storage
 except ImportError:
     torch = None
+
 
 def apply_cpu_patches():
     """
@@ -20,24 +21,30 @@ def apply_cpu_patches():
     # Force deserialization onto CPU
     if hasattr(torch.storage, "_typed_storage_reconstructor"):
         orig_reconstruct = torch.storage._typed_storage_reconstructor
+
         def patched_reconstruct(device, dtype, storage_key, location, size):
             return orig_reconstruct("cpu", dtype, storage_key, "cpu", size)
+
         torch.storage._typed_storage_reconstructor = patched_reconstruct
 
     if hasattr(torch.storage, "_untyped_storage_reconstructor"):
         orig_untyped = torch.storage._untyped_storage_reconstructor
+
         def patched_untyped(device, storage_key, location, size):
             return orig_untyped("cpu", storage_key, "cpu", size)
+
         torch.storage._untyped_storage_reconstructor = patched_untyped
 
     # Redirect pickle load calls to CPU
     if hasattr(torch.storage, "_load_from_bytes"):
         orig_load_from_bytes = torch.storage._load_from_bytes
+
         def patched_load_from_bytes(b):
             try:
                 return torch.load(io.BytesIO(b), map_location="cpu")
             except Exception:
                 return orig_load_from_bytes(b)
+
         torch.storage._load_from_bytes = patched_load_from_bytes
 
     # Mock CUDA queries
@@ -49,49 +56,72 @@ def apply_cpu_patches():
     torch.cuda.max_memory_allocated = lambda *args, **kwargs: 0
     torch.cuda.reset_peak_memory_stats = lambda *args, **kwargs: None
     torch.cuda.set_device = lambda *args, **kwargs: None
-    
+
     class MockCudart:
         def cudaMemGetInfo(self, device):
             return (1024**3, 1024**3)
+
     torch.cuda.cudart = lambda: MockCudart()
 
     # Overwrite torch.device constructor to force CPU
     orig_device = torch.device
+
     def patched_device(*args, **kwargs):
         if len(args) > 0 and isinstance(args[0], str) and "cuda" in args[0].lower():
             return orig_device("cpu")
-        if "type" in kwargs and isinstance(kwargs["type"], str) and "cuda" in kwargs["type"].lower():
+        if (
+            "type" in kwargs
+            and isinstance(kwargs["type"], str)
+            and "cuda" in kwargs["type"].lower()
+        ):
             kwargs["type"] = "cpu"
         device_obj = orig_device(*args, **kwargs)
         if device_obj.type == "cuda":
             return orig_device("cpu")
         return device_obj
+
     torch.device = patched_device
 
     # Overwrite tensor allocation and transfer functions to redirect CUDA to CPU
     orig_as_tensor = torch.as_tensor
+
     def patched_as_tensor(data, dtype=None, device=None):
         if device is not None and "cuda" in str(device).lower():
             device = "cpu"
         return orig_as_tensor(data, dtype=dtype, device=device)
+
     torch.as_tensor = patched_as_tensor
 
     orig_tensor = torch.tensor
+
     def patched_tensor(data, *args, **kwargs):
-        if "device" in kwargs and kwargs["device"] is not None and "cuda" in str(kwargs["device"]).lower():
+        if (
+            "device" in kwargs
+            and kwargs["device"] is not None
+            and "cuda" in str(kwargs["device"]).lower()
+        ):
             kwargs["device"] = "cpu"
         return orig_tensor(data, *args, **kwargs)
+
     torch.tensor = patched_tensor
 
     orig_to = torch.Tensor.to
+
     def patched_to(self, *args, **kwargs):
         new_args = list(args)
         if len(new_args) > 0:
-            if (isinstance(new_args[0], str) or type(new_args[0]).__name__ == "device") and "cuda" in str(new_args[0]).lower():
+            if (
+                isinstance(new_args[0], str) or type(new_args[0]).__name__ == "device"
+            ) and "cuda" in str(new_args[0]).lower():
                 new_args[0] = "cpu"
-        if "device" in kwargs and kwargs["device"] is not None and "cuda" in str(kwargs["device"]).lower():
+        if (
+            "device" in kwargs
+            and kwargs["device"] is not None
+            and "cuda" in str(kwargs["device"]).lower()
+        ):
             kwargs["device"] = "cpu"
         return orig_to(self, *new_args, **kwargs)
+
     torch.Tensor.to = patched_to
 
     torch.Tensor.cuda = lambda self, *args, **kwargs: self.cpu()
@@ -99,18 +129,35 @@ def apply_cpu_patches():
     # Wrap other standard creation functions
     def make_safe_creator(orig_func):
         def wrapper(*args, **kwargs):
-            if "device" in kwargs and kwargs["device"] is not None and "cuda" in str(kwargs["device"]).lower():
+            if (
+                "device" in kwargs
+                and kwargs["device"] is not None
+                and "cuda" in str(kwargs["device"]).lower()
+            ):
                 kwargs["device"] = "cpu"
             return orig_func(*args, **kwargs)
+
         return wrapper
 
-    for name in ["empty", "zeros", "ones", "arange", "rand", "randn", "full", "zeros_like", "ones_like", "empty_like"]:
+    for name in [
+        "empty",
+        "zeros",
+        "ones",
+        "arange",
+        "rand",
+        "randn",
+        "full",
+        "zeros_like",
+        "ones_like",
+        "empty_like",
+    ]:
         if hasattr(torch, name):
             setattr(torch, name, make_safe_creator(getattr(torch, name)))
 
     # Monkeypatch TabPFN memory telemetry to disable CUDA memory queries
     try:
         import tabpfn.architectures.base.memory as tabpfn_memory
+
         tabpfn_memory.should_save_peak_mem = lambda *args, **kwargs: False
         tabpfn_memory._should_save_peak_mem_cuda = lambda *args, **kwargs: False
         tabpfn_memory._get_free_cuda_memory_bytes = lambda *args, **kwargs: 0
@@ -119,6 +166,7 @@ def apply_cpu_patches():
 
     try:
         import tabpfn.inference as tabpfn_inference
+
         tabpfn_inference.should_save_peak_mem = lambda *args, **kwargs: False
     except Exception:
         pass

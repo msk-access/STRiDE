@@ -119,7 +119,10 @@ def features(
 def predict(
     model: str = typer.Option("svm", "--model", help="Model architecture: 'svm' or 'tabpfn'."),
     model_joblib: Optional[str] = typer.Option(
-        None, "--model-joblib", "--model-path", help="Path to custom trained model file (overrides default)."
+        None,
+        "--model-joblib",
+        "--model-path",
+        help="Path to custom trained model file (overrides default).",
     ),
     features_dir: Optional[str] = typer.Option(
         None, "--features-dir", help="Directory containing feature TSVs (recursive search)."
@@ -168,7 +171,7 @@ def predict(
 
     # Initialize model predictor via factory
     predictor_inst = get_predictor(method=model, model_path=model_joblib)
-    
+
     # Run batch evaluation
     results_df = predictor_inst.predict_batch(feature_bag)
     paths = write_one_output_per_sample(results_df, out_dir)
@@ -193,7 +196,6 @@ def predict(
     logger.info("Wrote %d prediction file(s) to %s", len(paths), out_dir)
 
 
-
 # ---------------------------------------------------------------------------
 # stride run
 # ---------------------------------------------------------------------------
@@ -213,7 +215,10 @@ def run(
         None, "--site-list", help="MSI site list TSV. Default: bundled 170-site list."
     ),
     model_joblib: Optional[str] = typer.Option(
-        None, "--model-joblib", "--model-path", help="Path to custom trained model file (overrides default)."
+        None,
+        "--model-joblib",
+        "--model-path",
+        help="Path to custom trained model file (overrides default).",
     ),
     samples_list: Optional[str] = typer.Option(
         None,
@@ -366,19 +371,30 @@ def qc(
 @app.command()
 def train(
     method: str = typer.Option("svm", "--method", help="Model training method: 'svm' or 'tabpfn'."),
-    access_msi_dir: str = typer.Option(..., "--access-msi-dir", help="Directory with ACCESS MSI feature TSVs."),
-    access_mss_dir: str = typer.Option(..., "--access-mss-dir", help="Directory with ACCESS MSS feature TSVs."),
-    impact_msi_dir: Optional[str] = typer.Option(None, "--impact-msi-dir", help="Directory with IMPACT MSI feature TSVs."),
-    impact_mss_dir: Optional[str] = typer.Option(None, "--impact-mss-dir", help="Directory with IMPACT MSS feature TSVs."),
-    out_dir: str = typer.Option("trained_model", "--out-dir", help="Output directory for trained model."),
+    access_msi_dir: str = typer.Option(
+        ..., "--access-msi-dir", help="Directory with ACCESS MSI feature TSVs."
+    ),
+    access_mss_dir: str = typer.Option(
+        ..., "--access-mss-dir", help="Directory with ACCESS MSS feature TSVs."
+    ),
+    impact_msi_dir: Optional[str] = typer.Option(
+        None, "--impact-msi-dir", help="Directory with IMPACT MSI feature TSVs."
+    ),
+    impact_mss_dir: Optional[str] = typer.Option(
+        None, "--impact-mss-dir", help="Directory with IMPACT MSS feature TSVs."
+    ),
+    out_dir: str = typer.Option(
+        "trained_model", "--out-dir", help="Output directory for trained model."
+    ),
     min_spec: float = typer.Option(0.95, "--min-spec", help="Minimum specificity constraint."),
     cv_folds: int = typer.Option(5, "--cv-folds", help="Number of cross-validation folds."),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """Train an MSI prediction model (SVM or TabPFN) from feature TSV cohorts."""
     from pathlib import Path
-    from .models import get_trainer
+
     from .core.dataset import collect_binary_records
+    from .models import get_trainer
 
     setup_logging(verbose=verbose)
     logger.info("Initializing STRiDe training workflow (method=%s)...", method)
@@ -397,7 +413,7 @@ def train(
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    results = trainer.train_cv_refit(
+    trainer.train_cv_refit(
         impact_records=imp_records if imp_records is not None else access_records,
         access_records=access_records,
         test_records=access_records,
@@ -406,4 +422,3 @@ def train(
     )
 
     logger.info("Training complete. Artifacts saved to: %s", out_path)
-
