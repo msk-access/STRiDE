@@ -48,6 +48,7 @@ process STRIDE_PREDICT {
     echo "────────────────────────────────────────────────"
 
     stride predict \\
+        --model ${params.model} \\
         --feature-files ${features_tsv} \\
         --out-dir . \\
         ${model_arg} \\

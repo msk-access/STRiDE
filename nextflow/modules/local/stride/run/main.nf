@@ -73,6 +73,7 @@ process STRIDE_RUN {
     echo "────────────────────────────────────────────────"
 
     stride run \\
+        --model      ${params.model} \\
         --tumor-bam  ${tumor_bam} \\
         --normal-bam ${normal_bam} \\
         --out-dir    . \\
