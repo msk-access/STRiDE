@@ -25,14 +25,16 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "numpy",
-    "pandas",
-    "scipy",
+    "numpy>=1.26.0",
+    "pandas>=2.0.0",
+    "scipy>=1.12.0",
     "pysam>=0.21.0",
-    "scikit-learn",
-    "joblib",
+    "scikit-learn>=1.2.0",
+    "joblib>=1.3.0",
     "typer>=0.9.0",
     "rich>=13.0.0",
+    "tqdm>=4.65.0",
+    "matplotlib>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +65,19 @@ qc = [
     "kaleido>=0.2.1",
     "reportlab>=4.0.0",
 ]
+
+tabpfn = [
+    "torch>=2.0.0",
+    "tabpfn>=6.3.0",
+    "tabpfn-common-utils",
+    "tabpfn-extensions",
+]
+
+all = [
+    "stride-msk[qc,tabpfn]",
+]
+
+
 
 [project.scripts]
 stride = "stride.cli:app"

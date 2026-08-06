@@ -51,12 +51,14 @@ PATIENT_002,/data/P002_T.bam,/data/P002_N.bam,
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--outdir` | `results` | Output directory |
+| `--model` | `svm` | Model architecture choice (`svm` or `tabpfn`) |
 | `--site_list` | bundled 170-site | Custom MSI site list TSV |
-| `--model_joblib` | bundled SGD model | Custom trained model |
+| `--model_joblib` | bundled model | Custom trained model path |
 | `--min_coverage` | `20` | Minimum read coverage per site |
 | `--max_repeat_bins` | `100` | Maximum repeat-count bins |
 | `--generate_qc` | `true` | Generate interactive QC HTML report |
 | `--stride_version` | `latest` | Container image version tag |
+
 
 ## Profiles
 

@@ -85,3 +85,19 @@ class TestRunCommand:
     def test_requires_out_dir(self):
         result = runner.invoke(app, ["run"])
         assert result.exit_code != 0  # Missing required --out-dir
+
+
+class TestTrainCommand:
+    """Verify the 'train' sub-command interface."""
+
+    def test_help(self):
+        result = runner.invoke(app, ["train", "--help"])
+        assert result.exit_code == 0
+        out = _strip(result.output)
+        assert "--method" in out
+        assert "--access-msi-dir" in out
+        assert "--access-mss-dir" in out
+        assert "--out-dir" in out
+        assert "--min-spec" in out
+        assert "--cv-folds" in out
+

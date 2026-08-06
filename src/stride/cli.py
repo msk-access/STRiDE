@@ -117,8 +117,9 @@ def features(
 
 @app.command()
 def predict(
+    model: str = typer.Option("svm", "--model", help="Model architecture: 'svm' or 'tabpfn'."),
     model_joblib: Optional[str] = typer.Option(
-        None, "--model-joblib", help="Trained model .joblib. Default: bundled SGD model."
+        None, "--model-joblib", "--model-path", help="Path to custom trained model file (overrides default)."
     ),
     features_dir: Optional[str] = typer.Option(
         None, "--features-dir", help="Directory containing feature TSVs (recursive search)."
@@ -137,27 +138,20 @@ def predict(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
-    """Predict MSI status from pre-computed feature TSVs."""
+    """Predict MSI status from pre-computed feature TSVs using SVM or TabPFN."""
     from rich.console import Console
     from rich.table import Table
 
+    from .models import get_predictor
     from .predictor import (
-        build_matrix,
         gather_samples_from_inputs,
-        get_expected_features,
-        get_scores,
-        load_model,
-        map_msi_label,
         write_one_output_per_sample,
     )
 
     setup_logging(verbose=verbose)
     console = Console()
 
-    # Resolve model — use bundled default if not provided
-    resolved_model = model_joblib or get_default_model_path()
-
-    # Delegate file gathering to predictor.gather_samples_from_inputs()
+    # Delegate file gathering
     try:
         sample_ids, feature_bag = gather_samples_from_inputs(
             samples_dir=features_dir,
@@ -170,48 +164,34 @@ def predict(
         )
         raise typer.Exit(code=1) from err
 
-    logger.info("Found %d sample(s)", len(sample_ids))
+    logger.info("Found %d sample(s) for prediction using model='%s'", len(sample_ids), model)
 
-    # Load model and predict
-    import numpy as np
-    import pandas as pd
-
-    model = load_model(resolved_model)
-    expected = get_expected_features(model)
-    X = build_matrix(sample_ids, feature_bag, expected)
-    y_pred = np.asarray(model.predict(X)).astype(int)
-    scores = np.asarray(get_scores(model, X), dtype=float)
-
-    # Build MAF-aligned prediction DataFrame
-    msi_labels = [map_msi_label(p) for p in y_pred]
-    norm_bc = matched_norm_sample_barcode or ""
-    df_preds = pd.DataFrame(
-        {
-            "Tumor_Sample_Barcode": sample_ids,
-            "Matched_Norm_Sample_Barcode": [norm_bc] * len(sample_ids),
-            "MSI_class_predicted": msi_labels,
-            "msi_score": np.round(scores, 6),
-        }
-    )
-    paths = write_one_output_per_sample(df_preds, out_dir)
+    # Initialize model predictor via factory
+    predictor_inst = get_predictor(method=model, model_path=model_joblib)
+    
+    # Run batch evaluation
+    results_df = predictor_inst.predict_batch(feature_bag)
+    paths = write_one_output_per_sample(results_df, out_dir)
 
     # Display a Rich summary table
-    table = Table(title="MSI Predictions")
+    table = Table(title=f"MSI Predictions (Model: {model.upper()})")
     table.add_column("Tumor Sample", style="cyan", no_wrap=True)
     table.add_column("Prediction", style="bold")
     table.add_column("Score", justify="right")
 
-    for _, row in df_preds.iterrows():
-        pred_label = str(row["MSI_class_predicted"])
+    for _, row in results_df.iterrows():
+        pred_label = str(row.get("prediction", "MSS"))
+        score_val = row.get("score", 0.0)
         style = "red bold" if pred_label == "MSI" else "green"
         table.add_row(
-            str(row["Tumor_Sample_Barcode"]),
+            str(row.get("sample_id", "")),
             f"[{style}]{pred_label}[/{style}]",
-            f"{row['msi_score']:.6f}",
+            f"{score_val:.6f}",
         )
 
     console.print(table)
     logger.info("Wrote %d prediction file(s) to %s", len(paths), out_dir)
+
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +201,7 @@ def predict(
 
 @app.command()
 def run(
+    model: str = typer.Option("svm", "--model", help="Model architecture: 'svm' or 'tabpfn'."),
     tumor_bam: Optional[str] = typer.Option(
         None, "--tumor-bam", help="Tumor BAM (single-sample mode)."
     ),
@@ -232,7 +213,7 @@ def run(
         None, "--site-list", help="MSI site list TSV. Default: bundled 170-site list."
     ),
     model_joblib: Optional[str] = typer.Option(
-        None, "--model-joblib", help="Trained model .joblib. Default: bundled SGD model."
+        None, "--model-joblib", "--model-path", help="Path to custom trained model file (overrides default)."
     ),
     samples_list: Optional[str] = typer.Option(
         None,
@@ -375,3 +356,54 @@ def qc(
         output_path=output,
         prediction_result=pred_info,
     )
+
+
+# ---------------------------------------------------------------------------
+# stride train
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def train(
+    method: str = typer.Option("svm", "--method", help="Model training method: 'svm' or 'tabpfn'."),
+    access_msi_dir: str = typer.Option(..., "--access-msi-dir", help="Directory with ACCESS MSI feature TSVs."),
+    access_mss_dir: str = typer.Option(..., "--access-mss-dir", help="Directory with ACCESS MSS feature TSVs."),
+    impact_msi_dir: Optional[str] = typer.Option(None, "--impact-msi-dir", help="Directory with IMPACT MSI feature TSVs."),
+    impact_mss_dir: Optional[str] = typer.Option(None, "--impact-mss-dir", help="Directory with IMPACT MSS feature TSVs."),
+    out_dir: str = typer.Option("trained_model", "--out-dir", help="Output directory for trained model."),
+    min_spec: float = typer.Option(0.95, "--min-spec", help="Minimum specificity constraint."),
+    cv_folds: int = typer.Option(5, "--cv-folds", help="Number of cross-validation folds."),
+    verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
+) -> None:
+    """Train an MSI prediction model (SVM or TabPFN) from feature TSV cohorts."""
+    from pathlib import Path
+    from .models import get_trainer
+    from .core.dataset import collect_binary_records
+
+    setup_logging(verbose=verbose)
+    logger.info("Initializing STRiDe training workflow (method=%s)...", method)
+
+    acc_msi = [Path(access_msi_dir)]
+    acc_mss = [Path(access_mss_dir)]
+    access_records = collect_binary_records(acc_msi, acc_mss, cohort="access")
+
+    imp_records = None
+    if impact_msi_dir and impact_mss_dir:
+        imp_msi = [Path(impact_msi_dir)]
+        imp_mss = [Path(impact_mss_dir)]
+        imp_records = collect_binary_records(imp_msi, imp_mss, cohort="impact")
+
+    trainer = get_trainer(method=method, cv_folds=cv_folds, min_spec=min_spec)
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    results = trainer.train_cv_refit(
+        impact_records=imp_records if imp_records is not None else access_records,
+        access_records=access_records,
+        test_records=access_records,
+        metric_pool=["norm_l1", "norm_l2", "norm_wasserstein", "entropy_diff"],
+        outdir=out_path,
+    )
+
+    logger.info("Training complete. Artifacts saved to: %s", out_path)
+
