@@ -71,6 +71,17 @@ stride train --method svm --access-msi-dir /path/to/msi --access-mss-dir /path/t
 stride train --method tabpfn --access-msi-dir /path/to/msi --access-mss-dir /path/to/mss
 ```
 
+**Training Report:**
+By default, generates an interactive HTML report with:
+- ROC curves, Precision-Recall curves
+- Confusion matrices and per-class metrics
+- Cross-validation performance distribution
+- Feature importance visualization
+- Threshold optimization curves
+- Class balance analysis
+
+Report location: `<out-dir>/training_report.html`
+
 The `predictor.unwrap_model()` function handles multiple serialization formats (Pipeline, dict with `scaler`+`clf`, dict with `pipeline` key).
 
 ## Resource Management
@@ -113,3 +124,25 @@ nextflow run stride/main.nf -profile slurm \
 - Reproducible, containerized execution
 
 See [Nextflow Guide](user-guide/nextflow.md) for details.
+
+## Reporting Infrastructure
+
+STRiDE generates interactive HTML reports across the pipeline:
+
+**QC Dashboard** (`stride run --qc`)
+- Feature distribution visualizations
+- Site-level metrics and comparisons
+- Expert review interface
+
+**Training Report** (`stride train --report`)
+- Model performance evaluation
+- ROC/Precision-Recall curves
+- Cross-validation analysis
+- Feature importance
+- Threshold optimization
+
+Both reports use:
+- **Plotly** for interactive charts (zoom, pan, hover tooltips)
+- **Tabulator.js** for rich data tables
+- **Self-contained HTML** (no external dependencies at runtime)
+- **Export capabilities** (PNG, SVG, CSV)
