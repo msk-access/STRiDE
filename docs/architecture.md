@@ -2,7 +2,7 @@
 
 ## System Overview
 
-STRiDE is a microsatellite instability (MSI) prediction pipeline for MSK-ACCESS cfDNA sequencing. It extracts repeat-frequency features from paired tumor/normal BAMs at 170 curated microsatellite loci, then classifies samples as MSI-H or MSS using a trained SGD classifier.
+STRiDE is a microsatellite instability (MSI) prediction pipeline for MSK-ACCESS cfDNA sequencing. It extracts repeat-frequency features from paired tumor/normal BAMs at 170 curated microsatellite loci, then classifies samples as MSI-H or MSS using trained ML models (default: SGD; also supports SVM, TabPFN).
 
 ## Data Flow
 
@@ -15,16 +15,27 @@ graph LR
     E --> F[Predictor]
     G[Trained Model] --> F
     F --> H[MSI/MSS Prediction]
+    E --> I[QC Dashboard]
+    H --> I
+    J[Training Data] --> K[Model Trainer]
+    K --> L[Custom Model]
 ```
+
+**Three main workflows:**
+1. **Prediction** (default): Features → Model → Prediction
+2. **QC Analysis** (optional): Features → Interactive Dashboard
+3. **Model Training** (advanced): Cohort data → Train SVM/TabPFN → Custom model
 
 ## Module Map
 
 | Module | Responsibility |
 |--------|---------------|
-| `cli.py` | Typer CLI with `features`, `predict`, `run` sub-commands |
+| `cli.py` | Typer CLI with `features`, `predict`, `run`, `qc`, `train` sub-commands |
 | `feature_generator.py` | BAM parsing, repeat counting, statistical feature extraction |
-| `predictor.py` | Model loading, feature matrix assembly, scoring |
-| `pipeline.py` | Orchestration — single/batch feature → prediction flows |
+| `predictor.py` | Model loading, feature matrix assembly, scoring (SGD/SVM/TabPFN) |
+| `qc.py` | Interactive Plotly dashboard, site explorer, expert QC review |
+| `train.py` | SVM/TabPFN model training on labeled feature cohorts |
+| `pipeline.py` | Orchestration — single/batch feature → prediction → QC flows |
 | `utils.py` | Logging setup (`RichHandler`), filename helpers, sample-list I/O |
 | `models/__init__.py` | `importlib.resources` helpers for bundled model/data |
 
@@ -41,9 +52,24 @@ Each of the 170 sites produces features in these categories:
 
 ## Model Architecture
 
-The default model is an `sklearn.Pipeline`:
-1. `StandardScaler` — feature normalization
-2. `SGDClassifier` — stochastic gradient descent for MSI-H vs MSS
+STRiDE supports multiple classifiers:
+
+**Default: SGD Classifier**
+- `sklearn.Pipeline` with:
+  1. `StandardScaler` — feature normalization
+  2. `SGDClassifier` — stochastic gradient descent for MSI-H vs MSS
+- Lightweight, fast inference
+
+**Available Alternatives:**
+- **SVM** — Support Vector Machine (linear or RBF kernel)
+- **TabPFN** — Transformer-based Prior-Function Network (state-of-the-art on small datasets)
+
+**Model Training:**
+Train custom SVM/TabPFN models using `stride train`:
+```bash
+stride train --method svm --access-msi-dir /path/to/msi --access-mss-dir /path/to/mss
+stride train --method tabpfn --access-msi-dir /path/to/msi --access-mss-dir /path/to/mss
+```
 
 The `predictor.unwrap_model()` function handles multiple serialization formats (Pipeline, dict with `scaler`+`clf`, dict with `pipeline` key).
 
@@ -52,3 +78,38 @@ The `predictor.unwrap_model()` function handles multiple serialization formats (
 - BAM files are managed via context managers (`MSIProfileGenerator.__enter__`/`__exit__`)
 - Bundled data accessed via `importlib.resources.files()` for cross-platform compatibility
 - Logging configured centrally by `utils.setup_logging()`, called once from the CLI layer
+
+## QC Dashboard
+
+The QC module generates interactive HTML reports for expert review:
+
+- **Feature distributions**: Repeat-count histograms per site (tumor vs normal)
+- **Site explorer**: Searchable table of all 170 sites with metrics
+- **Distance visualization**: L1, L2, Wasserstein distance comparisons
+- **MSI verdict**: Dashboard summary with prediction score and confidence
+- **Tabulator.js integration**: Rich data table with filtering, sorting, export
+
+Enable QC dashboard with:
+```bash
+stride run --qc
+# or standalone:
+stride qc --feature-tsv features.tsv --output report.html
+```
+
+## Nextflow Pipeline
+
+For high-performance cluster execution (SLURM, SGE, etc.):
+
+```bash
+nextflow run stride/main.nf -profile slurm \
+    --samples_list samples.csv \
+    --out_dir results/
+```
+
+**Features:**
+- Automatic resource allocation per sample
+- Batch parallelization (feature generation)
+- Integration with HPC schedulers
+- Reproducible, containerized execution
+
+See [Nextflow Guide](user-guide/nextflow.md) for details.

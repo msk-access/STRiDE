@@ -25,7 +25,10 @@ stride run \
 
 - 🧬 **170 curated MSI loci** — validated for cfDNA panel sequencing
 - 📊 **36+ features per site** — statistical, distance, allele, and quality metrics
-- 🤖 **Trained SGD classifier** — bundled model, no setup required
+- 🤖 **Multiple classifiers** — SGD, SVM, TabPFN models; bundled default model
+- 🎨 **Interactive QC dashboard** — visualize feature distributions, site explorer, expert review
+- 🚀 **Nextflow DSL2 pipeline** — high-performance HPC execution with resource scheduling
+- 🏋️ **Model training** — train custom SVM/TabPFN models on your cohorts
 - 📋 **Rich CLI** — progress bars, colored tables, structured logging
 - 🐳 **Docker support** — `ghcr.io/msk-access/stride`
 
