@@ -22,9 +22,18 @@ class SVMPredictor(BasePredictor):
         threshold: float = 0.0,
     ):
         if model_path is None:
-            model_path = DEFAULT_SVM_DIR / "svm_incremental.joblib"
+            if (DEFAULT_SVM_DIR / "svm_incremental.joblib").exists():
+                model_path = DEFAULT_SVM_DIR / "svm_incremental.joblib"
+            else:
+                model_path = DEFAULT_SVM_DIR.parent / "msi_sgd_v1.joblib"
+
         if columns_path is None:
-            columns_path = DEFAULT_SVM_DIR / "feature_columns_best_combo.txt"
+            if (DEFAULT_SVM_DIR / "feature_columns_best_combo.txt").exists():
+                columns_path = DEFAULT_SVM_DIR / "feature_columns_best_combo.txt"
+            elif (DEFAULT_SVM_DIR.parent / "tabpfn" / "feature_columns_best_combo.txt").exists():
+                columns_path = DEFAULT_SVM_DIR.parent / "tabpfn" / "feature_columns_best_combo.txt"
+            else:
+                columns_path = DEFAULT_SVM_DIR / "feature_columns.txt"
 
         self.model_path = Path(model_path)
         self.columns_path = Path(columns_path)
@@ -34,11 +43,12 @@ class SVMPredictor(BasePredictor):
         self._load_components()
 
     def _load_components(self):
-        # 1) Load expected feature columns
-        if not self.columns_path.exists():
-            raise FileNotFoundError(f"Columns path does not exist: {self.columns_path}")
-        with open(self.columns_path) as f:
-            self.expected_columns = [line.strip() for line in f if line.strip()]
+        # 1) Load expected feature columns if columns file exists
+        if self.columns_path.exists():
+            with open(self.columns_path) as f:
+                self.expected_columns = [line.strip() for line in f if line.strip()]
+        else:
+            self.expected_columns = []
 
         # 2) Load sign map if present
         self.sign_map = None
@@ -48,12 +58,26 @@ class SVMPredictor(BasePredictor):
 
         # 3) Load SVM model
         if not self.model_path.exists():
-            raise FileNotFoundError(f"Model path does not exist: {self.model_path}")
+            # If default bundled model file is not on disk, keep model as None until custom path provided
+            self.model = None
+            return
+
         try:
             self.model = joblib.load(self.model_path)
         except Exception:
             with open(self.model_path, "rb") as f:
                 self.model = pickle.load(f)
+
+        # If expected columns was empty, try extracting from model
+        if not self.expected_columns and self.model is not None:
+            from stride.predictor import get_expected_features, unwrap_model
+
+            unwrapped = unwrap_model(self.model)
+            if unwrapped is not None:
+                try:
+                    self.expected_columns = list(get_expected_features(unwrapped))
+                except Exception:
+                    pass
 
     def _get_scores(self, X: np.ndarray) -> float:
         try:

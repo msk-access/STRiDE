@@ -19,21 +19,40 @@ class TabPFNPredictor(BasePredictor):
         model_path: Optional[Union[str, Path]] = None,
         imputer_path: Optional[Union[str, Path]] = None,
         columns_path: Optional[Union[str, Path]] = None,
-        threshold: float = 0.660658,
+        variant: Optional[str] = None,
+        threshold: Optional[float] = None,
         device: str = "cpu",
     ):
+        self.variant = variant
+        self.device = device
+        self.default_threshold = threshold if threshold is not None else 0.660658
+
+        # Resolve variant directory if variant is specified
+        variant_dir = DEFAULT_TABPFN_DIR
+        if variant:
+            cand_variant_dir = DEFAULT_TABPFN_DIR / variant
+            if cand_variant_dir.is_dir():
+                variant_dir = cand_variant_dir
+
         if model_path is None:
-            model_path = DEFAULT_TABPFN_DIR / "tabpfn_finetuned.joblib"
+            # Check for best model pipeline first, then finetuned joblib
+            if (variant_dir / "tabpfn_best_model_pipeline.joblib").exists():
+                model_path = variant_dir / "tabpfn_best_model_pipeline.joblib"
+            else:
+                model_path = variant_dir / "tabpfn_finetuned.joblib"
+
         if imputer_path is None:
-            imputer_path = DEFAULT_TABPFN_DIR / "imputer.joblib"
+            imputer_path = variant_dir / "imputer.joblib"
         if columns_path is None:
-            columns_path = DEFAULT_TABPFN_DIR / "feature_columns_best_combo.txt"
+            if (variant_dir / "feature_columns_best_combo.txt").exists():
+                columns_path = variant_dir / "feature_columns_best_combo.txt"
+            else:
+                columns_path = variant_dir / "feature_columns.txt"
 
         self.model_path = Path(model_path)
         self.imputer_path = Path(imputer_path)
         self.columns_path = Path(columns_path)
-        self.threshold = threshold
-        self.device = device
+        self.threshold = self.default_threshold
 
         if self.device == "cpu":
             apply_cpu_patches()
@@ -41,6 +60,28 @@ class TabPFNPredictor(BasePredictor):
         self._load_components()
 
     def _load_components(self):
+        # Check if model_path points to an all-in-one pipeline artifact dictionary
+        if self.model_path.exists():
+            try:
+                raw = joblib.load(self.model_path)
+            except Exception:
+                with open(self.model_path, "rb") as f:
+                    raw = pickle.load(f)
+
+            if isinstance(raw, dict) and "model" in raw:
+                self.model = raw["model"]
+                self.imputer = raw.get("imputer", None)
+                self.expected_columns = raw.get("best_columns", raw.get("combo_cols", []))
+                if "threshold" in raw:
+                    self.threshold = float(raw["threshold"])
+                self._apply_device_fixes()
+                return
+
+            self.model = raw
+        else:
+            raise FileNotFoundError(f"Model path does not exist: {self.model_path}")
+
+        # If not an all-in-one dictionary, load individual components
         # 1) Load expected feature columns
         if not self.columns_path.exists():
             raise FileNotFoundError(f"Columns path does not exist: {self.columns_path}")
@@ -56,17 +97,11 @@ class TabPFNPredictor(BasePredictor):
             with open(self.imputer_path, "rb") as f:
                 self.imputer = pickle.load(f)
 
-        # 3) Load TabPFN classifier model
-        if not self.model_path.exists():
-            raise FileNotFoundError(f"Model path does not exist: {self.model_path}")
-        try:
-            self.model = joblib.load(self.model_path)
-        except Exception:
-            with open(self.model_path, "rb") as f:
-                self.model = pickle.load(f)
+        self._apply_device_fixes()
 
-        # 4) Handle CPU-specific relocations
-        if self.device == "cpu":
+    def _apply_device_fixes(self):
+        # Handle CPU-specific relocations
+        if self.device == "cpu" and self.model is not None:
             force_cpu(self.model)
             if hasattr(self.model, "device"):
                 self.model.device = "cpu"

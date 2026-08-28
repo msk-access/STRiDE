@@ -110,11 +110,13 @@ workflow {
     //
     def ch_sites = params.site_list
         ? file(params.site_list, checkIfExists: true)
-        : file("${projectDir}/../src/stride/data/msi_sites_170.tsv")
+        : (file("${projectDir}/../src/stride/data/msi_sites_170.txt").exists()
+            ? file("${projectDir}/../src/stride/data/msi_sites_170.txt")
+            : file('NO_FILE'))
 
     def ch_model = params.model_joblib
         ? file(params.model_joblib, checkIfExists: true)
-        : file("${projectDir}/../src/stride/data/msi_model.joblib")
+        : file('NO_FILE')
 
     //
     // STEP 3: Run the pipeline

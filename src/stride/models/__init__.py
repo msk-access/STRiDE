@@ -36,43 +36,59 @@ def get_default_sites_path() -> str:
 def get_trainer(method: str = "svm", **kwargs):
     """Factory function to retrieve a Trainer instance by method name.
 
-    Supported methods: 'svm', 'tabpfn'
+    Supported methods: 'svm', 'tabpfn', 'tabpfn_access_only', 'tabpfn_access_impact'
     """
     method_key = method.lower().replace("-", "_")
     if method_key == "svm":
         return SVMTrainer(**kwargs)
-    elif method_key == "tabpfn":
+    elif method_key.startswith("tabpfn"):
         try:
             from .tabpfn import TabPFNTrainer
 
-            return TabPFNTrainer(**kwargs)
+            variant = kwargs.pop("variant", None)
+            if method_key == "tabpfn_access_only":
+                variant = "access_only"
+            elif method_key == "tabpfn_access_impact":
+                variant = "access_impact"
+
+            return TabPFNTrainer(variant=variant, **kwargs) if variant else TabPFNTrainer(**kwargs)
         except ImportError as err:
             raise ImportError(
                 "TabPFN trainer requires optional dependencies. Install via: pip install '.[tabpfn]'"
             ) from err
     else:
-        raise ValueError(f"Unknown model method '{method}'. Supported methods: 'svm', 'tabpfn'")
+        raise ValueError(
+            f"Unknown model method '{method}'. Supported methods: 'svm', 'tabpfn', 'tabpfn_access_only', 'tabpfn_access_impact'"
+        )
 
 
 def get_predictor(method: str = "svm", **kwargs):
     """Factory function to retrieve a Predictor instance by method name.
 
-    Supported methods: 'svm', 'tabpfn'
+    Supported methods: 'svm', 'tabpfn', 'tabpfn_access_only', 'tabpfn_access_impact'
     """
     method_key = method.lower().replace("-", "_")
     if method_key == "svm":
         return SVMPredictor(**kwargs)
-    elif method_key == "tabpfn":
+    elif method_key.startswith("tabpfn"):
         try:
             from .tabpfn import TabPFNPredictor
 
-            return TabPFNPredictor(**kwargs)
+            variant = kwargs.pop("variant", None)
+            if method_key == "tabpfn_access_only":
+                variant = "access_only"
+            elif method_key == "tabpfn_access_impact":
+                variant = "access_impact"
+
+            return TabPFNPredictor(variant=variant, **kwargs) if variant else TabPFNPredictor(**kwargs)
         except ImportError as err:
             raise ImportError(
                 "TabPFN predictor requires optional dependencies. Install via: pip install '.[tabpfn]'"
             ) from err
     else:
-        raise ValueError(f"Unknown model method '{method}'. Supported methods: 'svm', 'tabpfn'")
+        raise ValueError(
+            f"Unknown model method '{method}'. Supported methods: 'svm', 'tabpfn', 'tabpfn_access_only', 'tabpfn_access_impact'"
+        )
 
 
 __all__ = [
