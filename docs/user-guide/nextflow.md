@@ -52,7 +52,7 @@ PATIENT_002,/data/P002_T.bam,/data/P002_N.bam,
 |-----------|---------|-------------|
 | `--outdir` | `results` | Output directory |
 | `--model` | `svm` | Model architecture choice (`svm` or `tabpfn`) |
-| `--site_list` | bundled 170-site | Custom MSI site list TSV |
+| `--site_list` | bundled 170-site | Custom MSI site list (TXT format) |
 | `--model_joblib` | bundled model | Custom trained model path |
 | `--min_coverage` | `20` | Minimum read coverage per site |
 | `--max_repeat_bins` | `100` | Maximum repeat-count bins |
