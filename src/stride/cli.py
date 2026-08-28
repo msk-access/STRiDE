@@ -117,7 +117,11 @@ def features(
 
 @app.command()
 def predict(
-    model: str = typer.Option("svm", "--model", help="Model architecture: 'svm' or 'tabpfn'."),
+    model: str = typer.Option(
+        "svm",
+        "--model",
+        help="Model architecture: 'svm', 'tabpfn', 'tabpfn_access_only', or 'tabpfn_access_impact'.",
+    ),
     model_joblib: Optional[str] = typer.Option(
         None,
         "--model-joblib",
@@ -203,7 +207,11 @@ def predict(
 
 @app.command()
 def run(
-    model: str = typer.Option("svm", "--model", help="Model architecture: 'svm' or 'tabpfn'."),
+    model: str = typer.Option(
+        "svm",
+        "--model",
+        help="Model architecture: 'svm', 'tabpfn', 'tabpfn_access_only', or 'tabpfn_access_impact'.",
+    ),
     tumor_bam: Optional[str] = typer.Option(
         None, "--tumor-bam", help="Tumor BAM (single-sample mode)."
     ),
@@ -257,16 +265,17 @@ def run(
 
     # Resolve defaults
     resolved_sites = site_list or get_default_sites_path()
-    resolved_model = model_joblib or get_default_model_path()
+    resolved_model = model_joblib or (get_default_model_path() if model == "svm" else None)
 
     # --- Batch mode ---
     if samples_list:
-        logger.info("Running batch mode from: %s", samples_list)
+        logger.info("Running batch mode from: %s (model: %s)", samples_list, model)
         results = run_end_to_end_batch(
             samples_list_path=samples_list,
             sites_file=resolved_sites,
             model_joblib=resolved_model,
             out_dir=out_dir,
+            model_method=model,
             min_coverage=min_coverage,
             max_repeat_bins=max_repeat_bins,
             keep_features=not delete_features,
@@ -295,13 +304,14 @@ def run(
         )
         raise typer.Exit(code=1)
 
-    logger.info("Running single-sample mode")
+    logger.info("Running single-sample mode (model: %s)", model)
     res = run_end_to_end_single(
         sites_file=resolved_sites,
         tumor_bam=tumor_bam,
         normal_bam=normal_bam,
         model_joblib=resolved_model,
         out_dir=out_dir,
+        model_method=model,
         sample_id=sample_id,
         matched_norm_sample_barcode=matched_norm_sample_barcode,
         min_coverage=min_coverage,

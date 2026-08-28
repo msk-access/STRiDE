@@ -14,7 +14,10 @@ import logging
 import os
 from typing import Optional
 
+import pandas as pd
+
 from .feature_generator import MSIProfileGenerator
+from .models import get_predictor
 from .predictor import predict_from_feature_tsvs, write_one_output_per_sample
 from .qc import generate_report, is_qc_available
 from .utils import read_samples_list, safe_name, strip_ext
@@ -62,8 +65,9 @@ def run_end_to_end_single(
     sites_file: str,
     tumor_bam: str,
     normal_bam: str,
-    model_joblib: str,
-    out_dir: str,
+    model_joblib: Optional[str] = None,
+    out_dir: str = "out",
+    model_method: str = "svm",
     sample_id: Optional[str] = None,
     matched_norm_sample_barcode: Optional[str] = None,
     min_coverage: int = 20,
@@ -86,7 +90,7 @@ def run_end_to_end_single(
 
     sid = sample_id.strip() if sample_id else strip_ext(tumor_bam)
     normal_bc = matched_norm_sample_barcode or strip_ext(normal_bam)
-    logger.info("Processing sample: %s (matched normal: %s)", sid, normal_bc)
+    logger.info("Processing sample: %s (matched normal: %s, model: %s)", sid, normal_bc, model_method)
 
     features_dir = os.path.join(out_dir, "features")
     preds_dir = os.path.join(out_dir, "predictions")
@@ -104,7 +108,24 @@ def run_end_to_end_single(
         max_repeat_bins=max_repeat_bins,
     )
 
-    df_preds = predict_from_feature_tsvs(model_joblib, [feat_tsv], normal_barcodes=[normal_bc])
+    if model_method.lower().startswith("tabpfn"):
+        predictor = get_predictor(method=model_method, model_path=model_joblib)
+        res_df = predictor.predict_batch([feat_tsv])
+        pred_label = res_df.iloc[0].get("prediction", "MSS") if not res_df.empty else "MSS"
+        p_score = res_df.iloc[0].get("p_msi", 0.0) if not res_df.empty else 0.0
+        df_preds = pd.DataFrame(
+            [
+                {
+                    "Tumor_Sample_Barcode": sid,
+                    "Matched_Norm_Sample_Barcode": normal_bc,
+                    "MSI_class_predicted": pred_label,
+                    "msi_score": round(float(p_score), 6),
+                }
+            ]
+        )
+    else:
+        df_preds = predict_from_feature_tsvs(model_joblib, [feat_tsv], normal_barcodes=[normal_bc])
+
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
     # Optional QC Generation
@@ -151,8 +172,9 @@ def run_end_to_end_single(
 def run_end_to_end_batch(
     samples_list_path: str,
     sites_file: str,
-    model_joblib: str,
-    out_dir: str,
+    model_joblib: Optional[str] = None,
+    out_dir: str = "out",
+    model_method: str = "svm",
     min_coverage: int = 20,
     max_repeat_bins: int = 100,
     keep_features: bool = True,
@@ -196,10 +218,22 @@ def run_end_to_end_batch(
         normal_barcodes.append(s.get("matched_norm_sample_barcode") or strip_ext(s["normal_bam"]))
 
     # 2) Predict all (batch) then write one output per sample
-    logger.info("Running batch prediction for %d samples", len(sample_ids))
-    df_preds = predict_from_feature_tsvs(
-        model_joblib, feature_tsvs, normal_barcodes=normal_barcodes
-    )
+    logger.info("Running batch prediction for %d samples (model: %s)", len(sample_ids), model_method)
+    if model_method.lower().startswith("tabpfn"):
+        predictor = get_predictor(method=model_method, model_path=model_joblib)
+        res_df = predictor.predict_batch(feature_tsvs)
+        df_preds = pd.DataFrame(
+            {
+                "Tumor_Sample_Barcode": sample_ids,
+                "Matched_Norm_Sample_Barcode": normal_barcodes,
+                "MSI_class_predicted": res_df["prediction"].tolist() if "prediction" in res_df else ["MSS"] * len(sample_ids),
+                "msi_score": res_df["p_msi"].round(6).tolist() if "p_msi" in res_df else [0.0] * len(sample_ids),
+            }
+        )
+    else:
+        df_preds = predict_from_feature_tsvs(
+            model_joblib, feature_tsvs, normal_barcodes=normal_barcodes
+        )
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
     # 3) Optional QC Generation

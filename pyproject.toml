@@ -95,8 +95,10 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-"stride.models" = ["*.joblib"]
-"stride.data" = ["*.txt"]
+"stride.models" = ["*.joblib", "*.txt", "*.json"]
+"stride.models.tabpfn" = ["*.joblib", "*.txt", "**/*.joblib", "**/*.txt"]
+"stride.models.svm" = ["*.joblib", "*.txt", "*.json"]
+"stride.data" = ["*.txt", "*.tsv"]
 
 # ---------------------------------------------------------------------------
 # Testing

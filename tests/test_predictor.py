@@ -125,3 +125,43 @@ class TestWriteOutput:
         paths = write_one_output_per_sample(df, nested)
         assert os.path.isdir(nested)
         assert len(paths) == 1
+
+
+# ---------------------------------------------------------------------------
+# get_predictor factory
+# ---------------------------------------------------------------------------
+
+
+class TestGetPredictorFactory:
+    """Verify get_predictor creates appropriate predictor instances."""
+
+    def test_get_svm_predictor(self):
+        from stride.models import get_predictor, SVMPredictor
+
+        pred = get_predictor("svm")
+        assert isinstance(pred, SVMPredictor)
+
+    def test_get_tabpfn_predictor_variants(self, monkeypatch):
+        import pytest
+        from stride.models import get_predictor
+
+        try:
+            from stride.models.tabpfn.predictor import TabPFNPredictor
+
+            # Mock _load_components so we don't require heavy torch/tabpfn weights in fast unit test
+            monkeypatch.setattr(TabPFNPredictor, "_load_components", lambda self: None)
+
+            pred_default = get_predictor("tabpfn")
+            assert isinstance(pred_default, TabPFNPredictor)
+
+            pred_acc = get_predictor("tabpfn_access_only")
+            assert isinstance(pred_acc, TabPFNPredictor)
+            assert pred_acc.variant == "access_only"
+
+            pred_imp = get_predictor("tabpfn_access_impact")
+            assert isinstance(pred_imp, TabPFNPredictor)
+            assert pred_imp.variant == "access_impact"
+        except ImportError:
+            with pytest.raises(ImportError, match="TabPFN"):
+                get_predictor("tabpfn")
+
