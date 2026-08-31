@@ -3,22 +3,183 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "stride"
+name = "stride-msk"
 version = "0.1.0"
-description = "STRiDE MSI calling pipeline"
+description = "STRiDE — MSI prediction pipeline for MSK-ACCESS"
 readme = "README.md"
-requires-python = ">=3.8"
-dependencies = [
-  "numpy",
-  "pandas",
-  "scipy",
-  "pysam",
-  "scikit-learn",
-  "joblib",
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Karmelina Charalambous"},
+    {name = "MSK-ACCESS", email = "shahr2@mskcc.org"},
 ]
+keywords = ["bioinformatics", "msi", "microsatellite-instability", "msk-access", "genomics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy>=1.26.0",
+    "pandas>=2.0.0",
+    "scipy>=1.12.0",
+    "pysam>=0.21.0",
+    "scikit-learn>=1.2.0",
+    "joblib>=1.3.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "tqdm>=4.65.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "pandas-stubs",
+]
+
+docs = [
+    "mkdocs-material>=9.0.0",
+    "mkdocs-mermaid2-plugin",
+    "mkdocs-glightbox",
+    "mkdocs-git-revision-date-localized-plugin",
+    "mkdocs-panzoom-plugin",
+    "mkdocs-pdf",
+    "pillow",
+    "cairosvg",
+    "mike",
+]
+
+qc = [
+    "plotly>=5.15.0",
+    "kaleido>=0.2.1",
+    "reportlab>=4.0.0",
+]
+
+tabpfn = [
+    "torch>=2.0.0",
+    "tabpfn>=6.3.0",
+    "tabpfn-common-utils",
+    "tabpfn-extensions",
+]
+
+all = [
+    "stride-msk[qc,tabpfn]",
+]
+
+
+
+[project.scripts]
+stride = "stride.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/msk-access/STRiDE"
+Repository = "https://github.com/msk-access/STRiDE"
+Documentation = "https://msk-access.github.io/STRiDE/"
+"Bug Tracker" = "https://github.com/msk-access/STRiDE/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"stride.models" = ["*.joblib", "*.txt", "*.json"]
+"stride.models.tabpfn" = ["*.joblib", "*.txt", "**/*.joblib", "**/*.txt"]
+"stride.models.svm" = ["*.joblib", "*.txt", "*.json"]
+"stride.data" = ["*.txt", "*.tsv"]
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=stride",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+
+[tool.coverage.run]
+source = ["src/stride"]
+omit = ["*/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+# ---------------------------------------------------------------------------
+# Linting & formatting
+# ---------------------------------------------------------------------------
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pysam.*",
+    "sklearn.*",
+    "scipy.*",
+    "joblib.*",
+    "plotly.*",
+]
+ignore_missing_imports = true
