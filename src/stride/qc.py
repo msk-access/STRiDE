@@ -126,6 +126,7 @@ def generate_report(
     output_path: str,
     format: str = "html",
     prediction_result: dict | None = None,
+    attribution_result: dict | None = None,
     top_n: int = 99999,
 ) -> None:
     """Main entrypoint — generates the interactive HTML QC report."""
@@ -138,7 +139,8 @@ def generate_report(
         logger.warning("Feature TSV %s is empty.", feature_tsv)
         return
 
-    generate_html_report(df, output_path, prediction_result, top_n)
+    generate_html_report(df, output_path, prediction_result=prediction_result, attribution_result=attribution_result, top_n=top_n)
+
 
 
 # ── Dashboard Cards ────────────────────────────────────────────────────────
@@ -848,6 +850,383 @@ def _build_site_explorer(df: pd.DataFrame) -> go.Figure:
     return _apply_theme(fig)
 
 
+def _build_mini_site_fig(row: pd.Series, rank: int, phi: float | None = None) -> go.Figure:
+    """Build a compact repeat length histogram for Top 15 Grid card."""
+    t_norm = row["tumor_norm_freqs"]
+    n_norm = row["normal_norm_freqs"]
+    t_raw = row["tumor_freqs"]
+    n_raw = row["normal_freqs"]
+    x_list = list(range(1, len(t_norm) + 1))
+    n_norm_l = [round(float(v), 4) for v in n_norm]
+    t_norm_l = [round(float(v), 4) for v in t_norm]
+    n_raw_l = [int(v) for v in n_raw]
+    t_raw_l = [int(v) for v in t_raw]
+    ref_count = int(row["repeat_count"])
+
+    nz = [int(i) for i in np.nonzero(t_norm)[0].tolist()] + [int(i) for i in np.nonzero(n_norm)[0].tolist()] + [ref_count]
+    nz_min = min(nz) if nz else 0
+    nz_max = max(nz) if nz else len(x_list)
+    
+    # Provide wide x-axis view so grouped bars remain slender and readable
+    xmin = max(0, min(nz_min - 5, 0 if ref_count < 18 else nz_min - 6))
+    xmax = max(nz_max + 6, xmin + 22)
+
+    fig = go.Figure()
+    # Normal bars
+    fig.add_trace(
+        go.Bar(
+            x=x_list,
+            y=n_norm_l,
+            name="Normal",
+            marker_color=CLR_NORMAL,
+            opacity=0.85,
+            customdata=n_raw_l,
+            hovertemplate="Normal<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
+            showlegend=False,
+        )
+    )
+    # Tumor bars
+    fig.add_trace(
+        go.Bar(
+            x=x_list,
+            y=t_norm_l,
+            name="Tumor",
+            marker_color=CLR_TUMOR,
+            opacity=0.90,
+            customdata=t_raw_l,
+            hovertemplate="Tumor<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
+            showlegend=False,
+        )
+    )
+    # Ref line
+    max_y = max(max(n_norm_l or [1.0]), max(t_norm_l or [1.0]), 0.01) * 1.15
+    fig.add_trace(
+        go.Scatter(
+            x=[ref_count, ref_count],
+            y=[0, max_y],
+            mode="lines",
+            line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
+            name="Ref",
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        height=190,
+        margin={"l": 25, "r": 10, "t": 28, "b": 25},
+        title={"text": f"#{rank} {row['locus']}", "font": {"size": 11, "color": TEXT_PRIMARY}},
+        barmode="group",
+        bargap=0.15,
+        bargroupgap=0.05,
+        showlegend=False,
+        xaxis={"range": [xmin, xmax], "gridcolor": CLR_GRID, "zerolinecolor": CLR_GRID, "tickfont": {"size": 9}},
+        yaxis={"gridcolor": CLR_GRID, "zerolinecolor": CLR_GRID, "tickfont": {"size": 9}},
+    )
+    _apply_theme(fig)
+    return fig
+
+
+
+def _build_top_single_explorer_fig(df_top: pd.DataFrame) -> go.Figure:
+    """Build a single explorer figure for top sites with dropdown updatemenus."""
+    n_sites = len(df_top)
+    traces_per_site = 3
+
+    global_xmax = 0
+    for _, _row in df_top.iterrows():
+        for col in ("tumor_norm_freqs", "normal_norm_freqs"):
+            nz = np.nonzero(_row[col])[0]
+            if len(nz):
+                global_xmax = max(global_xmax, int(nz[-1]) + 1)
+    x_range = [0, global_xmax + 3]
+
+    fig = go.Figure()
+    buttons = []
+
+    # 3 always-visible legend-only traces
+    fig.add_trace(go.Bar(x=[None], y=[None], name="Normal", marker_color=CLR_NORMAL, opacity=0.75, showlegend=True, legendgroup="Normal", visible=True))
+    fig.add_trace(go.Bar(x=[None], y=[None], name="Tumor", marker_color=CLR_TUMOR, opacity=0.85, showlegend=True, legendgroup="Tumor", visible=True))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", line={"color": CLR_GOOD, "width": 2, "dash": "dash"}, name="Ref", showlegend=True, legendgroup="Ref", visible=True))
+    n_legend_traces = 3
+
+    for i, row in df_top.iterrows():
+        t_norm = row["tumor_norm_freqs"]
+        n_norm = row["normal_norm_freqs"]
+        t_raw = row["tumor_freqs"]
+        n_raw = row["normal_freqs"]
+        x_list = list(range(1, len(t_norm) + 1))
+        n_norm_l = [round(float(v), 6) for v in n_norm]
+        t_norm_l = [round(float(v), 6) for v in t_norm]
+        n_raw_l = [int(v) for v in n_raw]
+        t_raw_l = [int(v) for v in t_raw]
+        ref_count = int(row["repeat_count"])
+
+        visible = i == 0
+
+        # Trace 1: Normal
+        fig.add_trace(
+            go.Bar(
+                x=x_list,
+                y=n_norm_l,
+                name="Normal",
+                marker_color=CLR_NORMAL,
+                opacity=0.75,
+                visible=visible,
+                customdata=n_raw_l,
+                hovertemplate="Normal<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
+                showlegend=False,
+                legendgroup="Normal",
+            )
+        )
+        # Trace 2: Tumor
+        fig.add_trace(
+            go.Bar(
+                x=x_list,
+                y=t_norm_l,
+                name="Tumor",
+                marker_color=CLR_TUMOR,
+                opacity=0.85,
+                visible=visible,
+                customdata=t_raw_l,
+                hovertemplate="Tumor<br>Repeat %{x}<br>Freq: %{y:.3f}<br>Reads: %{customdata}<extra></extra>",
+                showlegend=False,
+                legendgroup="Tumor",
+            )
+        )
+        # Trace 3: Ref
+        max_y = max(float(n_norm.max()) if len(n_norm) else 0, float(t_norm.max()) if len(t_norm) else 0, 0.01) * 1.1
+        fig.add_trace(
+            go.Scatter(
+                x=[ref_count, ref_count],
+                y=[0, max_y],
+                mode="lines",
+                line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
+                name="Ref",
+                visible=visible,
+                showlegend=False,
+                legendgroup="Ref",
+                hovertemplate=f"Reference: {ref_count}x<extra></extra>",
+            )
+        )
+
+        vis = [True] * n_legend_traces + [False] * (n_sites * traces_per_site)
+        base = n_legend_traces + traces_per_site * int(i)
+        vis[base] = True
+        vis[base + 1] = True
+        vis[base + 2] = True
+
+        phi_v = row.get("phi", None)
+        phi_fmt = f"{phi_v:+.4f}" if (phi_v is not None and not np.isnan(phi_v)) else "—"
+
+        buttons.append(
+            {
+                "label": f"#{i+1} {row['locus']}",
+                "method": "update",
+                "args": [
+                    {"visible": vis},
+                    {"title": ""},
+                    {
+                        "_locus": f"#{i+1} {row['locus']}",
+                        "_phi": phi_fmt,
+                        "_l1": float(row["l1_distance"]),
+                        "_l2": float(row["l2_distance"]),
+                        "_wass": float(row["wasserstein_distance"]),
+                        "_pval": float(row["p_value"]),
+                        "_entropy": float(row["entropy_diff"]),
+                        "_t_cov": int(row["tumor_total_coverage"]),
+                        "_n_cov": int(row["normal_total_coverage"]),
+                        "_t_mapq": float(row["tumor_mapq_mean"]),
+                        "_t_bq": float(row.get("tumor_bq_mean", 0)),
+                        "_badge": _quality_badge(row),
+                    },
+                ],
+            }
+        )
+
+    fig.update_layout(
+        updatemenus=[
+            {
+                "active": 0,
+                "buttons": buttons,
+                "visible": False,
+                "x": 0.0,
+                "xanchor": "left",
+                "y": 1.22,
+                "yanchor": "top",
+                "bgcolor": BG_CARD_BORDER,
+                "font": {"color": TEXT_PRIMARY, "size": 11},
+                "pad": {"r": 10, "t": 10},
+            }
+        ],
+        barmode="group",
+        bargap=0.15,
+        bargroupgap=0.05,
+        xaxis_title="Repeat Length",
+        xaxis_range=x_range,
+        yaxis_title="Normalized Frequency",
+        title="",
+        height=520,
+        legend={"x": 0.85, "y": 1.0, "bgcolor": "rgba(0,0,0,0)"},
+    )
+    return _apply_theme(fig)
+
+
+def _build_top_msi_sites(
+    df: pd.DataFrame,
+    attribution_result: dict | None = None,
+    top_n: int = 15,
+) -> tuple[str, str]:
+    """
+    Builds the Top MSI Sites (Top 15) tab containing both the Top 15 Grid and Single Locus Explorer.
+    When ShapIQ attribution is present, loci are ranked by model Shapley attribution |phi| descending.
+    Otherwise, ranked by Wasserstein distance.
+    """
+    df_work = df.copy()
+    has_shapiq = False
+
+    if attribution_result and "site_attributions" in attribution_result and attribution_result["site_attributions"]:
+        site_atts = attribution_result["site_attributions"]
+        phi_map = {}
+        rank_map = {}
+        for r_idx, s in enumerate(site_atts, 1):
+            sid = s.get("site_id", "")
+            phi_map[sid] = float(s.get("phi", 0.0))
+            rank_map[sid] = r_idx
+
+        def match_phi(row):
+            chr_str = str(row["chrom"]).replace("chr", "")
+            start_str = str(row["start"])
+            for sid, p_val in phi_map.items():
+                s_clean = sid.replace("chr", "").replace(":", "_")
+                if f"{chr_str}_{start_str}" in s_clean or f"{chr_str}:{start_str}" in sid:
+                    return p_val, rank_map.get(sid, 999)
+            return None, 999
+
+        phis = []
+        ranks = []
+        for _, r in df_work.iterrows():
+            p, rk = match_phi(r)
+            phis.append(p)
+            ranks.append(rk)
+        df_work["phi"] = phis
+        df_work["model_rank"] = ranks
+
+        df_top = df_work[df_work["phi"].notnull()].sort_values("model_rank").head(top_n).reset_index(drop=True)
+        if len(df_top) > 0:
+            has_shapiq = True
+        else:
+            df_top = df_work.sort_values("wasserstein_distance", ascending=False).head(top_n).reset_index(drop=True)
+    else:
+        df_top = df_work.sort_values("wasserstein_distance", ascending=False).head(top_n).reset_index(drop=True)
+
+    if len(df_top) == 0:
+        return "", ""
+
+    if has_shapiq:
+        desc_text = f"Explore top {len(df_top)} driver loci ranked by <b>ShapIQ Model Attribution (&phi;)</b>, driving the MSI-H (&phi; &gt; 0) or MSS (&phi; &lt; 0) prediction."
+    else:
+        desc_text = f"Explore top {len(df_top)} driver loci meeting High Instability criteria (Wasserstein &ge; 0.050 or L1 &gt; 0.20, p &lt; 0.05), ranked by Wasserstein distance."
+
+    # Build Grid View cards
+    grid_cards = []
+    for idx, row in df_top.iterrows():
+        rank_num = idx + 1
+        phi_val = row.get("phi", None)
+        phi_html = ""
+        if phi_val is not None and not np.isnan(phi_val):
+            phi_cls = "phi-pos" if phi_val >= 0 else "phi-neg"
+            phi_html = f"<span>&phi;: <b class='{phi_cls}'>{phi_val:+.4f}</b></span> · "
+
+        wass_val = float(row.get("wasserstein_distance", 0.0))
+        l1_val = float(row.get("l1_distance", 0.0))
+        pval = float(row.get("p_value", 1.0))
+        badge_html = _quality_badge(row)
+
+        mini_fig = _build_mini_site_fig(row, rank=rank_num, phi=phi_val)
+        mini_plot_html = mini_fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+
+        grid_cards.append(f"""
+        <div class="mini-site-card">
+            <div class="mini-card-header">
+                <div class="mini-card-title">#{rank_num} {row['locus']}</div>
+                <div>{badge_html}</div>
+            </div>
+            <div class="mini-card-stats">
+                {phi_html}<span>Wass: <b>{wass_val:.4f}</b></span> · <span>L1: <b>{l1_val:.3f}</b></span> · <span>p: <b>{pval:.1e}</b></span>
+            </div>
+            <div style="width:100%; height:190px;">
+                {mini_plot_html}
+            </div>
+        </div>
+        """)
+
+    grid_html = f'<div id="top-grid-view" class="top-grid-container">{"".join(grid_cards)}</div>'
+
+    # Build Single Locus Explorer for Top 15
+    top_single_fig = _build_top_single_explorer_fig(df_top)
+    top_single_plot_html = top_single_fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": "hover"})
+
+    single_html = f"""
+    <div id="top-single-view" class="explorer-wrap" style="display:none; margin-top:16px;">
+        <div class="locus-combobox" role="combobox" aria-expanded="false" aria-haspopup="listbox" aria-owns="top-locus-listbox">
+            <input id="top-locus-search" type="text" placeholder="Select top driver locus..." autocomplete="off" aria-autocomplete="list" aria-controls="top-locus-listbox">
+            <span class="cb-arrow">&#9662;</span>
+            <ul id="top-locus-listbox" role="listbox" class="cb-list"></ul>
+        </div>
+        <div class="locus-nav">
+            <button id="top-locus-prev" class="locus-nav-btn" title="Previous locus" disabled>&#8249;</button>
+            <span id="top-locus-counter" class="locus-counter">1 / {len(df_top)}</span>
+            <button id="top-locus-next" class="locus-nav-btn" title="Next locus">&#8250;</button>
+        </div>
+        <div class="view-toggle">
+            <button id="top-toggle-norm" class="vt-btn active">Normalized</button>
+            <button id="top-toggle-raw" class="vt-btn">Raw Counts</button>
+        </div>
+        <div id="top-locus-metrics" class="locus-metrics-card">
+            <div class="lm-header">
+                <span id="top-lm-locus" class="lm-locus">—</span>
+                <span id="top-lm-badge"></span>
+            </div>
+            <div class="lm-grid">
+                <div class="lm-item"><span class="lm-label">Shapley &phi;</span><span id="top-lm-phi" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">L1</span><span id="top-lm-l1" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">L2</span><span id="top-lm-l2" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">Wasserstein</span><span id="top-lm-wass" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">p-value</span><span id="top-lm-pval" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">Entropy &Delta;</span><span id="top-lm-entropy" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">T Cov</span><span id="top-lm-tcov" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">N Cov</span><span id="top-lm-ncov" class="lm-val">—</span></div>
+                <div class="lm-item"><span class="lm-label">T MapQ</span><span id="top-lm-mapq" class="lm-val">—</span></div>
+            </div>
+        </div>
+        <div id="top-single-chart">
+            {top_single_plot_html}
+        </div>
+    </div>
+    """
+
+    tab_content = f"""
+    <div id="tab-top-sites" class="tab-content active" role="tabpanel">
+        <div class="card card-wide" style="background:var(--bg-card); border:1px solid var(--bg-card-border); border-radius:12px; padding:20px;">
+            <div class="top-header-row">
+                <div class="top-header-desc">{desc_text}</div>
+                <div class="subview-toggle">
+                    <button id="top-btn-single" class="subview-btn">Single Locus</button>
+                    <button id="top-btn-grid" class="subview-btn active">Top {len(df_top)} Grid</button>
+                </div>
+            </div>
+            {grid_html}
+            {single_html}
+        </div>
+    </div>
+    """
+
+    tab_btn = f"""<button class="tab-btn active" data-target="tab-top-sites" role="tab" aria-selected="true">Top MSI Sites (Top {len(df_top)})</button>"""
+    return tab_btn, tab_content
+
+
+
 # ── Data Table (Tabulator.js) ──────────────────────────────────────────────
 def _build_data_table_json(df: pd.DataFrame) -> str:
     """Build JSON data array for Tabulator.js table."""
@@ -1294,7 +1673,103 @@ body {{
     overflow: visible !important;
     text-overflow: clip !important;
 }}
+
+
+/* ── Top 15 Sites Grid & Single Locus Toggle ──── */
+.top-header-row {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+}}
+.top-header-desc {{
+    color: var(--text-secondary);
+    font-size: 13px;
+    max-width: 800px;
+}}
+.top-grid-container {{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}}
+@media (max-width: 1300px) {{
+    .top-grid-container {{ grid-template-columns: repeat(3, 1fr); }}
+}}
+@media (max-width: 950px) {{
+    .top-grid-container {{ grid-template-columns: repeat(2, 1fr); }}
+}}
+@media (max-width: 600px) {{
+    .top-grid-container {{ grid-template-columns: 1fr; }}
+}}
+.mini-site-card {{
+    background: var(--bg-card);
+    border: 1px solid var(--bg-card-border);
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 2px 8px var(--shadow);
+    display: flex;
+    flex-direction: column;
+}}
+.mini-card-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}}
+.mini-card-title {{
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+.mini-card-stats {{
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}}
+.mini-card-stats b {{
+    color: var(--accent);
+}}
+.mini-card-stats .phi-pos {{
+    color: #ff5252;
+}}
+.mini-card-stats .phi-neg {{
+    color: #4fc3f7;
+}}
+.subview-toggle {{
+    display: inline-flex;
+    background: var(--bg-page);
+    border: 1px solid var(--bg-card-border);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 2px;
+}}
+.subview-btn {{
+    padding: 6px 14px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: all 0.15s ease;
+}}
+.subview-btn.active {{
+    background: var(--accent);
+    color: #0f1117;
+    font-weight: 600;
+}}
 """
+
+
 
 _JS = """
 // ── Theme Toggle ──────────────────────────────────
@@ -1374,12 +1849,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 b.classList.remove('active');
                 b.setAttribute('aria-selected', 'false');
             });
-            document.getElementById(btn.dataset.target).classList.add('active');
+            var target = document.getElementById(btn.dataset.target);
+            if (target) target.classList.add('active');
             btn.classList.add('active');
             btn.setAttribute('aria-selected', 'true');
+
+            // Redraw Tabulator tables if active
+            if (btn.dataset.target === 'tab-table' && window._strideTable) {
+                window._strideTable.redraw(true);
+            }
+            if (btn.dataset.target === 'tab-attribution' && window._driverTable) {
+                window._driverTable.redraw(true);
+            }
+
+            // Trigger window resize and Plotly resize for all plots in active tab
             window.dispatchEvent(new Event('resize'));
+            if (target) {
+                target.querySelectorAll('.js-plotly-plot').forEach(function(p) {
+                    if (window.Plotly && Plotly.Plots) Plotly.Plots.resize(p);
+                });
+            }
+
+            // If switching to Site Explorer, ensure initial locus is displayed
+            if (btn.dataset.target === 'tab-explorer') {
+                var btns = getButtons();
+                if (btns.length > 0) {
+                    updateMetricsCard(getMeta(btns[currentIdx]));
+                    updateCounter();
+                    if (cbInput && !cbInput.value) cbInput.value = getMeta(btns[currentIdx])._locus || btns[currentIdx].label;
+                }
+            }
         });
     });
+
 
     // ── Searchable Combobox (Unified Site Explorer) ─
     var cbInput = document.getElementById('locus-search');
@@ -1585,14 +2087,170 @@ document.addEventListener('DOMContentLoaded', function() {
             if (li) selectByIndex(parseInt(li.dataset.idx));
         });
     }
+
+    // ── Top 15 Subview Toggle (Grid vs Single Locus) ─
+    var btnTopGrid = document.getElementById('top-btn-grid');
+    var btnTopSingle = document.getElementById('top-btn-single');
+    var topGridView = document.getElementById('top-grid-view');
+    var topSingleView = document.getElementById('top-single-view');
+
+    if (btnTopGrid && btnTopSingle && topGridView && topSingleView) {
+        btnTopGrid.addEventListener('click', function() {
+            btnTopGrid.classList.add('active');
+            btnTopSingle.classList.remove('active');
+            topGridView.style.display = 'grid';
+            topSingleView.style.display = 'none';
+            window.dispatchEvent(new Event('resize'));
+        });
+        btnTopSingle.addEventListener('click', function() {
+            btnTopSingle.classList.add('active');
+            btnTopGrid.classList.remove('active');
+            topGridView.style.display = 'none';
+            topSingleView.style.display = 'block';
+            window.dispatchEvent(new Event('resize'));
+        });
+    }
+
+    // ── Top 15 Single Locus Explorer Combobox & Controls ─
+    var topCbInput = document.getElementById('top-locus-search');
+    var topCbList  = document.getElementById('top-locus-listbox');
+    var topCbWrap  = topCbInput ? topCbInput.closest('.locus-combobox') : null;
+    var topKbIdx   = -1;
+    var topCurrentIdx = 0;
+
+    function getTopPlot() {
+        var el = document.querySelector('#top-single-chart .js-plotly-plot');
+        if (!el || !el.layout || !el.layout.updatemenus) return null;
+        return el;
+    }
+
+    function getTopButtons() {
+        var plot = getTopPlot();
+        return plot ? (plot.layout.updatemenus[0].buttons || []) : [];
+    }
+
+    function updateTopMetricsCard(meta) {
+        if (!document.getElementById('top-lm-locus')) return;
+        document.getElementById('top-lm-locus').textContent = meta._locus || '—';
+        document.getElementById('top-lm-badge').innerHTML = meta._badge || '';
+        document.getElementById('top-lm-phi').textContent = meta._phi || '—';
+        document.getElementById('top-lm-l1').textContent = (meta._l1 != null) ? meta._l1.toFixed(3) : '—';
+        document.getElementById('top-lm-l2').textContent = (meta._l2 != null) ? meta._l2.toFixed(3) : '—';
+        document.getElementById('top-lm-wass').textContent = (meta._wass != null) ? meta._wass.toFixed(4) : '—';
+        document.getElementById('top-lm-pval').textContent = (meta._pval != null) ? meta._pval.toExponential(2) : '—';
+        document.getElementById('top-lm-entropy').textContent = (meta._entropy != null) ? meta._entropy.toFixed(3) : '—';
+        document.getElementById('top-lm-tcov').textContent = (meta._t_cov != null) ? meta._t_cov.toLocaleString() : '—';
+        document.getElementById('top-lm-ncov').textContent = (meta._n_cov != null) ? meta._n_cov.toLocaleString() : '—';
+        document.getElementById('top-lm-mapq').textContent = (meta._t_mapq != null) ? meta._t_mapq.toFixed(1) : '—';
+    }
+
+    function updateTopCounter() {
+        var el = document.getElementById('top-locus-counter');
+        var btns = getTopButtons();
+        if (el) el.textContent = (topCurrentIdx + 1) + ' / ' + btns.length;
+        var prevBtn = document.getElementById('top-locus-prev');
+        var nextBtn = document.getElementById('top-locus-next');
+        if (prevBtn) prevBtn.disabled = (topCurrentIdx === 0);
+        if (nextBtn) nextBtn.disabled = (topCurrentIdx >= btns.length - 1);
+    }
+
+    function renderTopList(query) {
+        if (!topCbList) return;
+        var btns = getTopButtons();
+        var html = '', count = 0;
+        var q = (query || '').toLowerCase();
+        for (var i = 0; i < btns.length; i++) {
+            var locus = getMeta(btns[i])._locus || btns[i].label;
+            if (q && locus.toLowerCase().indexOf(q) === -1) continue;
+            var cls = (i === topCurrentIdx) ? ' class="selected"' : '';
+            html += '<li role="option" data-idx="' + i + '"' + cls + '>' + highlightMatch(locus, q) + '</li>';
+            count++;
+        }
+        if (count === 0) {
+            html = '<li class="cb-no-match">No loci match &ldquo;' + (query||'') + '&rdquo;</li>';
+        }
+        topCbList.innerHTML = html;
+        topKbIdx = -1;
+        topCbList.classList.add('open');
+        if (topCbWrap) topCbWrap.setAttribute('aria-expanded', 'true');
+    }
+
+    function selectTopByIndex(btnIdx) {
+        var plot = getTopPlot();
+        var btns = getTopButtons();
+        if (!plot || btnIdx < 0 || btnIdx >= btns.length) return;
+        var btn = btns[btnIdx];
+        Plotly.update(plot, btn.args[0], btn.args[1]);
+        topCurrentIdx = btnIdx;
+        var meta = getMeta(btn);
+        updateTopMetricsCard(meta);
+        updateTopCounter();
+        if (topCbInput) topCbInput.value = meta._locus || btn.label;
+        if (topCbList) topCbList.classList.remove('open');
+        if (topCbWrap) topCbWrap.setAttribute('aria-expanded', 'false');
+    }
+
+    (function() {
+        var btns = getTopButtons();
+        if (btns.length > 0) {
+            updateTopMetricsCard(getMeta(btns[0]));
+            updateTopCounter();
+        }
+    })();
+
+    var prevTopBtn = document.getElementById('top-locus-prev');
+    if (prevTopBtn) prevTopBtn.addEventListener('click', function() {
+        if (topCurrentIdx > 0) selectTopByIndex(topCurrentIdx - 1);
+    });
+    var nextTopBtn = document.getElementById('top-locus-next');
+    if (nextTopBtn) nextTopBtn.addEventListener('click', function() {
+        var btns = getTopButtons();
+        if (topCurrentIdx < btns.length - 1) selectTopByIndex(topCurrentIdx + 1);
+    });
+
+    var topNormBtn = document.getElementById('top-toggle-norm');
+    var topRawBtn = document.getElementById('top-toggle-raw');
+    if (topNormBtn && topRawBtn) {
+        topNormBtn.addEventListener('click', function() {
+            var plot = getTopPlot(); if (!plot) return;
+            for (var t = 3; t < plot.data.length; t++) {
+                if (plot.data[t].visible === true && plot.data[t].customdata) {
+                    Plotly.restyle(plot, { y:[plot.data[t].customdata.slice()], customdata:[plot.data[t].y.slice()] }, [t]);
+                }
+            }
+            topNormBtn.classList.add('active'); topRawBtn.classList.remove('active');
+        });
+        topRawBtn.addEventListener('click', function() {
+            var plot = getTopPlot(); if (!plot) return;
+            for (var t = 3; t < plot.data.length; t++) {
+                if (plot.data[t].visible === true && plot.data[t].customdata) {
+                    Plotly.restyle(plot, { y:[plot.data[t].customdata.slice()], customdata:[plot.data[t].y.slice()] }, [t]);
+                }
+            }
+            topRawBtn.classList.add('active'); topNormBtn.classList.remove('active');
+        });
+    }
+
+    if (topCbInput) {
+        topCbInput.addEventListener('focus', function() { renderTopList(''); });
+        topCbInput.addEventListener('input', function() { renderTopList(this.value); });
+    }
+    if (topCbList) {
+        topCbList.addEventListener('click', function(e) {
+            var li = e.target.closest('li[data-idx]');
+            if (li) selectTopByIndex(parseInt(li.dataset.idx));
+        });
+    }
 });
 """
+
 
 
 def generate_html_report(
     df: pd.DataFrame,
     output_path: str,
     prediction_result: dict | None = None,
+    attribution_result: dict | None = None,
     top_n: int = 99999,
 ) -> None:
     """Assemble the full interactive HTML report."""
@@ -1656,11 +2314,7 @@ def generate_html_report(
     table_json = _build_data_table_json(df)
 
     _plotly_cfg = {"displayModeBar": "hover"}
-    # Convert to HTML divs
-    # Volcano is rendered first in the dashboard layout, so it loads PlotlyJS
-    pjs = "cdn"
-    volcano_html = f'<div class="card card-full">{fig_volcanoes.to_html(full_html=False, include_plotlyjs=pjs, config=_plotly_cfg)}</div>'
-    # Waterfalls card (full width) — Plotly already loaded
+    volcano_html = f'<div class="card card-full">{fig_volcanoes.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)}</div>'
     waterfall_html = f'<div class="card card-full">{fig_waterfalls.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)}</div>'
 
     # Half-width cards: dist corr, dist hist, entropy
@@ -1669,13 +2323,12 @@ def generate_html_report(
         other_cards.append(
             f'<div class="card">{fig.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)}</div>'
         )
-    # Quality metric cards (each is a separate card)
+    # Quality metric cards
     quality_cards = []
     for fig in fig_quality_list:
         quality_cards.append(
             f'<div class="card">{fig.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)}</div>'
         )
-    # Insert size card (full width, optional)
     insert_html = ""
     if fig_insert_size is not None:
         insert_html = f'<div class="card card-full">{fig_insert_size.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)}</div>'
@@ -1683,6 +2336,158 @@ def generate_html_report(
     explorer_html = fig_explorer.to_html(
         full_html=False, include_plotlyjs=False, config=_plotly_cfg
     )
+
+    # ── Attribution / ShapIQ Processing ────────────────────────────────────
+    att_res = attribution_result or (prediction_result if (prediction_result and "site_attributions" in prediction_result) else None)
+    attribution_tab_btn = ""
+    attribution_tab_content = ""
+    driver_tabulator_js = ""
+
+    if att_res and "site_attributions" in att_res and att_res["site_attributions"]:
+        site_atts = att_res["site_attributions"]
+        p_msi_val = float(att_res.get("p_msi", msi_score))
+        thr_val = float(att_res.get("threshold", threshold))
+        base_val = float(att_res.get("base_prob", 0.5))
+        sample_id_str = str(att_res.get("sample_id", "Sample"))
+
+        # Build interactive waterfall plot
+        try:
+            from stride.core.explainability import build_waterfall_figure
+            wf_fig = build_waterfall_figure(
+                sample_id=sample_id_str,
+                p_msi=p_msi_val,
+                threshold=thr_val,
+                base_prob=base_val,
+                site_attributions=site_atts,
+                top_n=15,
+            )
+            wf_html = wf_fig.to_html(full_html=False, include_plotlyjs=False, config=_plotly_cfg)
+        except Exception as e:
+            logger.warning("Could not build waterfall figure: %s", e)
+            wf_html = f"<div style='color:{CLR_WARN}; padding:20px;'>Unable to render Waterfall chart: {e}</div>"
+
+        # Tab button
+        attribution_tab_btn = """<button class="tab-btn" data-target="tab-attribution"
+                role="tab" aria-selected="false">Model Attribution (ShapIQ)</button>"""
+
+        # Table data
+        driver_rows = []
+        for r_idx, s in enumerate(site_atts, 1):
+            sid = s.get("site_id", "")
+            phi_val = float(s.get("phi", 0.0))
+            direction = "MSI (+)" if phi_val >= 0 else "MSS (-)"
+            driver_rows.append({
+                "rank": r_idx,
+                "site_id": sid,
+                "phi": round(phi_val, 6),
+                "direction": direction,
+                "entropy_d": round(float(s.get("entropy_diff", s.get("entropy_d", 0.0))), 4) if ("entropy_diff" in s or "entropy_d" in s) else None,
+                "tumor_entropy": round(float(s.get("tumor_entropy", 0.0)), 4) if "tumor_entropy" in s else None,
+                "l1": round(float(s.get("l1_distance", s.get("l1", 0.0))), 4) if ("l1_distance" in s or "l1" in s) else None,
+                "l2": round(float(s.get("l2_distance", s.get("l2", 0.0))), 4) if ("l2_distance" in s or "l2" in s) else None,
+            })
+        driver_table_json = json.dumps(driver_rows)
+
+        n_pos_drivers = sum(1 for s in site_atts if float(s.get("phi", 0.0)) > 0)
+        sum_pos_phi = sum(float(s.get("phi", 0.0)) for s in site_atts if float(s.get("phi", 0.0)) > 0)
+
+        attribution_tab_content = f"""
+    <div id="tab-attribution" class="tab-content" role="tabpanel">
+        <div class="card-grid">
+            <div class="section-label">
+                <h3>Model Explainability &amp; Locus Attribution (ShapIQ)</h3>
+                <p>Game-theoretic Shapley decomposition of the model prediction score. Shows which microsatellite loci pushed the prediction towards MSI (&phi; &gt; 0) or MSS (&phi; &lt; 0).</p>
+            </div>
+            <div class="card card-wide" style="grid-column: 1 / -1; background:var(--bg-card); border:1px solid var(--bg-card-border); border-radius:12px; padding:20px;">
+                <div style="display:flex; flex-wrap:wrap; gap:24px; margin-bottom:20px;">
+                    <div style="flex:1; min-width:180px; background:var(--bg-page); padding:16px; border-radius:8px; border:1px solid var(--bg-card-border);">
+                        <div style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase;">Predicted Status</div>
+                        <div style="font-size:22px; font-weight:bold; color:{'#d9534f' if msi_status == 'MSI' else '#5AD8A6'}; margin-top:4px;">{msi_status}</div>
+                        <div style="color:var(--text-secondary); font-size:11px; margin-top:4px;">Cutoff Threshold: {thr_val:.4f}</div>
+                    </div>
+                    <div style="flex:1; min-width:180px; background:var(--bg-page); padding:16px; border-radius:8px; border:1px solid var(--bg-card-border);">
+                        <div style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase;">MSI Probability (p_msi)</div>
+                        <div style="font-size:22px; font-weight:bold; color:var(--accent); margin-top:4px;">{p_msi_val:.4f}</div>
+                        <div style="color:var(--text-secondary); font-size:11px; margin-top:4px;">Prior Baseline: {base_val:.4f}</div>
+                    </div>
+                    <div style="flex:1; min-width:180px; background:var(--bg-page); padding:16px; border-radius:8px; border:1px solid var(--bg-card-border);">
+                        <div style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase;">MSI Driver Loci</div>
+                        <div style="font-size:22px; font-weight:bold; color:#ff8c42; margin-top:4px;">{n_pos_drivers} / {len(site_atts)}</div>
+                        <div style="color:var(--text-secondary); font-size:11px; margin-top:4px;">Net Positive &Sigma;&phi;: {sum_pos_phi:+.4f}</div>
+                    </div>
+                </div>
+                {wf_html}
+            </div>
+            <div class="card card-wide" style="grid-column: 1 / -1; background:var(--bg-card); border:1px solid var(--bg-card-border); border-radius:12px; padding:20px; margin-top:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div>
+                        <h4 style="margin:0; font-size:16px; color:var(--text-primary);">Ranked Driver Loci Attribution Table</h4>
+                        <div style="color:var(--text-secondary); font-size:12px;">Complete breakdown of Shapley contributions and underlying locus metrics.</div>
+                    </div>
+                    <button id="download-driver-csv-btn" class="btn-primary" style="padding:8px 16px; background:var(--accent); color:#0f1117; font-weight:600; border:none; border-radius:6px; cursor:pointer;">⬇ Download Drivers TSV</button>
+                </div>
+                <div id="driver-table"></div>
+            </div>
+        </div>
+    </div>
+        """
+
+
+        driver_tabulator_js = f"""
+    var driverData = {driver_table_json};
+    window._driverTable = new Tabulator("#driver-table", {{
+        data: driverData,
+        layout: "fitDataFill",
+        height: "500px",
+        pagination: "local",
+        paginationSize: 25,
+        paginationSizeSelector: [15, 25, 50, 100, true],
+        movableColumns: true,
+        resizableColumns: "header",
+        placeholder: "No Attribution Data",
+        initialSort: [{{column:"rank", dir:"asc"}}],
+        rowFormatter: function(row) {{
+            var d = row.getData();
+            if (d.phi > 0.01) {{
+                row.getElement().style.borderLeft = "3px solid #d9534f";
+            }} else if (d.phi < -0.01) {{
+                row.getElement().style.borderLeft = "3px solid #337ab7";
+            }}
+        }},
+        columns: [
+            {{title:"Rank", field:"rank", sorter:"number", width:75, hozAlign:"center"}},
+            {{title:"Microsatellite Locus", field:"site_id", sorter:"string", width:240, headerFilter:"input"}},
+            {{title:"Shapley \u03c6", field:"phi", sorter:"number", width:140, hozAlign:"right",
+              formatter:function(cell){{
+                  var v = cell.getValue();
+                  var clr = v >= 0 ? "#d9534f" : "#337ab7";
+                  return "<span style='color:"+clr+"; font-weight:bold;'>"+(v>=0?"+":"")+v.toFixed(6)+"</span>";
+              }},
+              headerFilter:"number"}},
+            {{title:"Direction", field:"direction", sorter:"string", width:110, hozAlign:"center",
+              formatter:function(cell){{
+                  var v = cell.getValue();
+                  var clr = v.indexOf("+") !== -1 ? "#d9534f" : "#337ab7";
+                  return "<span style='color:"+clr+"; font-weight:600;'>"+v+"</span>";
+              }}}},
+            {{title:"Entropy \u0394", field:"entropy_d", sorter:"number", width:120, hozAlign:"right",
+              formatter:function(cell){{var v=cell.getValue(); return v!=null?v.toFixed(4):"—";}}, headerFilter:"number"}},
+            {{title:"Tumor Entropy", field:"tumor_entropy", sorter:"number", width:130, hozAlign:"right",
+              formatter:function(cell){{var v=cell.getValue(); return v!=null?v.toFixed(4):"—";}}, headerFilter:"number"}},
+            {{title:"L1 Dist", field:"l1", sorter:"number", width:110, hozAlign:"right",
+              formatter:function(cell){{var v=cell.getValue(); return v!=null?v.toFixed(4):"—";}}, headerFilter:"number"}},
+            {{title:"L2 Dist", field:"l2", sorter:"number", width:110, hozAlign:"right",
+              formatter:function(cell){{var v=cell.getValue(); return v!=null?v.toFixed(4):"—";}}, headerFilter:"number"}},
+        ]
+    }});
+
+    var dBtn = document.getElementById("download-driver-csv-btn");
+    if (dBtn) {{
+        dBtn.addEventListener("click", function(){{
+            window._driverTable.download("csv", "msi_driver_loci_attributions.csv");
+        }});
+    }}
+        """
 
     # Compute max values for progress bar formatters
     max_l1 = float(df["l1_distance"].max()) if len(df) else 1.0
@@ -1774,7 +2579,12 @@ def generate_html_report(
     document.getElementById("download-csv-btn").addEventListener("click", function(){{
         window._strideTable.download("csv", "stride_qc_loci.csv");
     }});
+
+    {driver_tabulator_js}
     """
+
+    # ── Top MSI Sites Tab ──────────────────────────────────────────────────
+    top_tab_btn, top_tab_content = _build_top_msi_sites(df, attribution_result=attribution_result, top_n=15)
 
     # ── Assemble ───────────────────────────────────────────────────────────
     html = f"""<!DOCTYPE html>
@@ -1783,6 +2593,7 @@ def generate_html_report(
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>STRiDE QC Report</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script>
     (function(){{
         var t = localStorage.getItem('stride-theme');
@@ -1795,6 +2606,7 @@ def generate_html_report(
     </script>
     <style>{_CSS}</style>
 </head>
+
 <body>
 <noscript>
   <div style="padding:40px;text-align:center;color:#e8eaed;background:#1a1d29;border-radius:12px;margin:24px;">
@@ -1806,41 +2618,19 @@ def generate_html_report(
     {hero_html}
 
     <div class="tab-bar" role="tablist">
-        <button class="tab-btn active" data-target="tab-dash"
-                role="tab" aria-selected="true">Dashboard</button>
+        {top_tab_btn}
+        {attribution_tab_btn}
         <button class="tab-btn" data-target="tab-explorer"
                 role="tab" aria-selected="false">Site Explorer ({n_sites} sites)</button>
         <button class="tab-btn" data-target="tab-table"
                 role="tab" aria-selected="false">Data Table</button>
+        <button class="tab-btn" data-target="tab-dash"
+                role="tab" aria-selected="false">QC Dashboard</button>
     </div>
 
-    <div id="tab-dash" class="tab-content active" role="tabpanel">
-        <div class="card-grid">
-            <div class="section-label">
-                <h3>Distance Significance</h3>
-                <p>Sites above the dashed line (p &lt; 0.05) show significant distributional shift. Orange × markers flag low MapQ, BaseQ, or coverage.</p>
-            </div>
-            {volcano_html}
-            <div class="section-label">
-                <h3>Distance Agreement, Distribution &amp; Entropy</h3>
-                <p>Correlation, histogram, and entropy views of the three distance metrics. Points near the diagonal indicate agreement; entropy shift highlights repeat-length instability.</p>
-            </div>
-            {other_cards[0]}
-            {other_cards[1]}
-            {other_cards[2]}
-            <div class="section-label">
-                <h3>Site Ranking</h3>
-                <p>All loci ranked by distance; gradient intensity reflects magnitude.</p>
-            </div>
-            {waterfall_html}
-            <div class="section-label">
-                <h3>Sequencing Quality</h3>
-                <p>MapQ, BaseQ, coverage, and insert-size distributions help distinguish biological signal from artifacts.</p>
-            </div>
-            {''.join(quality_cards)}
-            {insert_html}
-        </div>
-    </div>
+    {top_tab_content}
+
+    {attribution_tab_content}
 
     <div id="tab-explorer" class="tab-content" role="tabpanel">
         <div class="explorer-wrap">
@@ -1896,6 +2686,36 @@ def generate_html_report(
             <div id="stride-table"></div>
         </div>
     </div>
+
+    <div id="tab-dash" class="tab-content" role="tabpanel">
+        <div class="card-grid">
+            <div class="section-label">
+                <h3>Distance Significance</h3>
+                <p>Sites above the dashed line (p &lt; 0.05) show significant distributional shift. Orange × markers flag low MapQ, BaseQ, or coverage.</p>
+            </div>
+            {volcano_html}
+            <div class="section-label">
+                <h3>Distance Agreement, Distribution &amp; Entropy</h3>
+                <p>Correlation, histogram, and entropy views of the three distance metrics. Points near the diagonal indicate agreement; entropy shift highlights repeat-length instability.</p>
+            </div>
+            {other_cards[0]}
+            {other_cards[1]}
+            {other_cards[2]}
+            <div class="section-label">
+                <h3>Site Ranking</h3>
+                <p>All loci ranked by distance; gradient intensity reflects magnitude.</p>
+            </div>
+            {waterfall_html}
+            <div class="section-label">
+                <h3>Sequencing Quality</h3>
+                <p>MapQ, BaseQ, coverage, and insert-size distributions help distinguish biological signal from artifacts.</p>
+            </div>
+            {''.join(quality_cards)}
+            {insert_html}
+        </div>
+    </div>
+</div>
+
 </div>
 <script src="https://unpkg.com/tabulator-tables@6/dist/js/tabulator.min.js"></script>
 <script>{_JS}</script>

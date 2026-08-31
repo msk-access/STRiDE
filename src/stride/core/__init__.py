@@ -8,6 +8,13 @@ from .dataset import (
     process_single_sample,
     sample_tsv_to_wide,
 )
+from .explainability import (
+    aggregate_features_to_sites,
+    build_waterfall_figure,
+    compute_sample_shapley_values,
+    export_driver_tsv,
+    extract_positive_probs,
+)
 from .metrics import (
     compute_metrics,
     confusion_counts,
@@ -38,4 +45,10 @@ __all__ = [
     "release_runtime_memory",
     "select_decision_threshold",
     "evaluate_model_performance",
+    "compute_sample_shapley_values",
+    "aggregate_features_to_sites",
+    "build_waterfall_figure",
+    "export_driver_tsv",
+    "extract_positive_probs",
 ]
+
