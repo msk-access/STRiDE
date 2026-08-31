@@ -128,7 +128,7 @@ def run_end_to_end_single(
 
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
-    # Optional QC Generation
+    # Optional QC & Explainability Generation
     qc_path = ""
     if generate_qc:
         if not is_qc_available():
@@ -146,8 +146,22 @@ def run_end_to_end_single(
                     "msi_score": df_preds.iloc[0]["msi_score"],
                 }
 
+            # Optional Explainability Attribution
+            att_info = None
+            if model_method.lower().startswith("tabpfn"):
+                try:
+                    predictor_inst = get_predictor(method=model_method, model_path=model_joblib)
+                    if hasattr(predictor_inst, "explain_sample"):
+                        logger.info("Computing ShapIQ locus attributions for %s...", sid)
+                        att_info = predictor_inst.explain_sample(feat_tsv)
+                        driver_tsv = os.path.join(qc_dir, f"{safe_name(sid)}_drivers.tsv")
+                        from stride.core.explainability import export_driver_tsv
+                        export_driver_tsv(att_info["site_attributions"], driver_tsv)
+                except Exception as ex:
+                    logger.warning("Explainability calculation skipped for %s: %s", sid, ex)
+
             logger.info("Generating QC report: %s", qc_path)
-            generate_report(feat_tsv, qc_path, prediction_result=pred_info)
+            generate_report(feat_tsv, qc_path, prediction_result=pred_info, attribution_result=att_info)
 
     if not keep_features:
         try:
@@ -214,7 +228,6 @@ def run_end_to_end_batch(
         )
         feature_tsvs.append(feat_tsv)
         sample_ids.append(sid)
-        # Use explicit barcode from manifest if available, otherwise derive
         normal_barcodes.append(s.get("matched_norm_sample_barcode") or strip_ext(s["normal_bam"]))
 
     # 2) Predict all (batch) then write one output per sample
@@ -245,11 +258,18 @@ def run_end_to_end_batch(
             qc_dir = os.path.join(out_dir, "qc")
             os.makedirs(qc_dir, exist_ok=True)
             logger.info("Generating QC reports for %d samples", len(sample_ids))
+            
+            predictor_inst = None
+            if model_method.lower().startswith("tabpfn"):
+                try:
+                    predictor_inst = get_predictor(method=model_method, model_path=model_joblib)
+                except Exception:
+                    predictor_inst = None
+
             for idx, (sid, feat) in enumerate(zip(sample_ids, feature_tsvs)):
                 qc_path = os.path.join(qc_dir, f"{safe_name(sid)}_qc.html")
 
                 pred_info = None
-                # Match the row in df_preds
                 row_match = df_preds[df_preds["Tumor_Sample_Barcode"] == sid]
                 if not row_match.empty:
                     pred_info = {
@@ -257,7 +277,17 @@ def run_end_to_end_batch(
                         "msi_score": row_match.iloc[0]["msi_score"],
                     }
 
-                generate_report(feat, qc_path, prediction_result=pred_info)
+                att_info = None
+                if predictor_inst is not None and hasattr(predictor_inst, "explain_sample"):
+                    try:
+                        att_info = predictor_inst.explain_sample(feat)
+                        driver_tsv = os.path.join(qc_dir, f"{safe_name(sid)}_drivers.tsv")
+                        from stride.core.explainability import export_driver_tsv
+                        export_driver_tsv(att_info["site_attributions"], driver_tsv)
+                    except Exception as ex:
+                        logger.warning("Explainability skipped for %s: %s", sid, ex)
+
+                generate_report(feat, qc_path, prediction_result=pred_info, attribution_result=att_info)
                 qc_paths[idx] = qc_path
 
     # 4) Optional cleanup of intermediate feature TSVs
@@ -284,3 +314,4 @@ def run_end_to_end_batch(
 
     logger.info("Batch complete — %d samples processed", len(results))
     return results
+

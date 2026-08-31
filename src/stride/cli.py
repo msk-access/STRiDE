@@ -338,14 +338,28 @@ def qc(
     prediction: Optional[str] = typer.Option(
         None, "--prediction", help="Prediction output TSV to extract MSI status."
     ),
+    model: Optional[str] = typer.Option(
+        "tabpfn", "--model", help="Model architecture for attribution: 'tabpfn' or 'svm'."
+    ),
+    model_joblib: Optional[str] = typer.Option(
+        None, "--model-joblib", "--model-path", help="Path to custom trained model file."
+    ),
     output: str = typer.Option(
         "qc_report.html", "--output", help="Output path for the HTML report."
     ),
+    explain: bool = typer.Option(
+        True, "--explain/--no-explain", help="Compute ShapIQ site attributions and embed Waterfall chart."
+    ),
+    shapiq_budget: int = typer.Option(
+        128, "--shapiq-budget", help="Evaluation budget for Shapley value sampling."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
-    """Generate an interactive HTML QC report for a sample."""
+    """Generate an interactive HTML QC report for a sample with ShapIQ explainability."""
     import pandas as pd
+    from pathlib import Path
 
+    from .models import get_predictor
     from .qc import generate_report, is_qc_available
 
     setup_logging(verbose=verbose)
@@ -360,17 +374,40 @@ def qc(
             df_pred = pd.read_csv(prediction, sep="\t")
             if not df_pred.empty:
                 pred_info = {
-                    "msi_status": df_pred.iloc[0]["MSI_class_predicted"],
-                    "msi_score": df_pred.iloc[0]["msi_score"],
+                    "msi_status": df_pred.iloc[0].get("MSI_class_predicted", df_pred.iloc[0].get("prediction", "UNKNOWN")),
+                    "msi_score": float(df_pred.iloc[0].get("msi_score", df_pred.iloc[0].get("p_msi", 0.0))),
                 }
         except Exception as e:
             logger.warning(f"Failed to parse prediction file: {e}")
+
+    att_info = None
+    if explain and model:
+        try:
+            predictor_inst = get_predictor(method=model, model_path=model_joblib)
+            if hasattr(predictor_inst, "explain_sample"):
+                logger.info("Computing ShapIQ locus attributions for %s...", feature_tsv)
+                att_info = predictor_inst.explain_sample(feature_tsv, budget=shapiq_budget)
+                if pred_info is None:
+                    pred_info = {
+                        "msi_status": att_info.get("prediction", "UNKNOWN"),
+                        "msi_score": float(att_info.get("p_msi", 0.0)),
+                    }
+                # Save accompanying driver TSV in same directory as output report
+                out_p = Path(output)
+                driver_tsv = out_p.parent / f"{out_p.stem.replace('_qc', '')}_drivers.tsv"
+                from stride.core.explainability import export_driver_tsv
+                export_driver_tsv(att_info["site_attributions"], driver_tsv)
+                logger.info("Saved driver loci attributions to %s", driver_tsv)
+        except Exception as e:
+            logger.warning("Could not compute model explainability: %s", e)
 
     generate_report(
         feature_tsv=feature_tsv,
         output_path=output,
         prediction_result=pred_info,
+        attribution_result=att_info,
     )
+
 
 
 # ---------------------------------------------------------------------------

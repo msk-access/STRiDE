@@ -8,9 +8,10 @@ import pandas as pd
 
 from stride.core.base import BasePredictor
 from stride.core.dataset import process_single_sample
-from stride.utils.torch_patches import apply_cpu_patches, force_cpu
+from stride.utils.torch_patches import apply_cpu_patches, force_cpu, setup_tabpfn_shims
 
 DEFAULT_TABPFN_DIR = Path(__file__).parent
+
 
 
 class TabPFNPredictor(BasePredictor):
@@ -60,7 +61,9 @@ class TabPFNPredictor(BasePredictor):
         self._load_components()
 
     def _load_components(self):
+        setup_tabpfn_shims()
         # Check if model_path points to an all-in-one pipeline artifact dictionary
+
         if self.model_path.exists():
             try:
                 raw = joblib.load(self.model_path)
@@ -71,7 +74,8 @@ class TabPFNPredictor(BasePredictor):
             if isinstance(raw, dict) and "model" in raw:
                 self.model = raw["model"]
                 self.imputer = raw.get("imputer", None)
-                self.expected_columns = raw.get("best_columns", raw.get("combo_cols", []))
+                self.selector = raw.get("selector", None)
+                self.expected_columns = raw.get("best_columns", raw.get("combo_cols", raw.get("feature_columns", [])))
                 if "threshold" in raw:
                     self.threshold = float(raw["threshold"])
                 self._apply_device_fixes()
@@ -121,12 +125,114 @@ class TabPFNPredictor(BasePredictor):
         X_sample = wide_vector.values.reshape(1, -1)
 
         # Impute missing features
-        X_imputed = self.imputer.transform(X_sample).astype(np.float32, copy=False)
+        if self.imputer is not None:
+            X_sample = self.imputer.transform(X_sample).astype(np.float32, copy=False)
+        else:
+            X_sample = np.nan_to_num(X_sample, nan=0.0).astype(np.float32, copy=False)
+
+        # Apply feature selector if present
+        if hasattr(self, "selector") and self.selector is not None:
+            X_sample = self.selector.transform(X_sample).astype(np.float32, copy=False)
 
         # Predict probability
-        prob = float(self.model.predict_proba(X_imputed)[0, 1])
+        prob = float(self.model.predict_proba(X_sample)[0, 1])
         pred_class = 1 if prob >= self.threshold else 0
         pred_label = "MSI" if pred_class == 1 else "MSS"
+
+        return {
+            "sample_id": tsv_path.stem,
+            "file_path": str(tsv_path.resolve()),
+            "msi_status": pred_label,
+            "msi_score": prob,
+            "p_msi": prob,
+            "threshold": self.threshold,
+            "y_pred": pred_class,
+            "prediction": pred_label,
+        }
+
+
+    def get_baseline_matrix(self, n_background: int = 30) -> np.ndarray:
+        """Returns the background baseline matrix for Shapley attribution."""
+        if hasattr(self.imputer, "statistics_") and self.imputer.statistics_ is not None:
+            bg_vec = self.imputer.statistics_
+        else:
+            bg_vec = np.zeros(len(self.expected_columns), dtype=np.float32)
+        return np.tile(bg_vec, (max(5, min(n_background, 30)), 1)).astype(np.float32)
+
+    def explain_sample(
+        self,
+        tsv_path: Union[str, Path],
+        budget: int = 128,
+        n_background: int = 30,
+        top_n: int = 15,
+    ) -> dict[str, Any]:
+        """
+        Evaluate a single sample TSV file and compute ShapIQ / Shapley site attributions.
+        """
+        from stride.core.explainability import (
+            aggregate_features_to_sites,
+            build_waterfall_figure,
+            compute_sample_shapley_values,
+            extract_positive_probs,
+        )
+
+        tsv_path = Path(tsv_path)
+        if not tsv_path.exists():
+            raise FileNotFoundError(f"Sample TSV not found: {tsv_path}")
+
+        wide_vector = process_single_sample(tsv_path, self.expected_columns)
+        X_sample = wide_vector.values.reshape(1, -1)
+
+        if self.imputer is not None:
+            X_imputed = self.imputer.transform(X_sample).astype(np.float32, copy=False)
+
+        else:
+            X_imputed = np.nan_to_num(X_sample, nan=0.0).astype(np.float32, copy=False)
+
+        class ModelWithSelector:
+            def __init__(self, model, selector):
+                self.model = model
+                self.selector = selector
+
+            def predict_proba(self, X):
+                X_sel = self.selector.transform(X) if self.selector is not None else X
+                return self.model.predict_proba(X_sel)
+
+        effective_model = ModelWithSelector(self.model, getattr(self, "selector", None))
+        prob = float(extract_positive_probs(effective_model.predict_proba(X_imputed))[0])
+        pred_class = 1 if prob >= self.threshold else 0
+        pred_label = "MSI" if pred_class == 1 else "MSS"
+
+        # Shapley computation
+        bg_matrix = self.get_baseline_matrix(n_background=n_background)
+        base_prob = float(extract_positive_probs(effective_model.predict_proba(bg_matrix)).mean())
+
+        phi_features = compute_sample_shapley_values(
+            model=effective_model,
+            x_sample=X_imputed[0],
+            background_matrix=bg_matrix,
+            feature_names=self.expected_columns,
+            budget=budget,
+        )
+
+
+        site_attributions = aggregate_features_to_sites(
+            feature_names=self.expected_columns,
+            x_sample=X_imputed[0],
+            phi_features=phi_features,
+        )
+
+        fig = build_waterfall_figure(
+            sample_id=tsv_path.stem,
+            p_msi=prob,
+            threshold=self.threshold,
+            base_prob=base_prob,
+            site_attributions=site_attributions,
+            top_n=top_n,
+        )
+
+        top_site = site_attributions[0]["site_id"] if site_attributions else "N/A"
+        top_phi = site_attributions[0]["phi"] if site_attributions else 0.0
 
         return {
             "sample_id": tsv_path.stem,
@@ -134,6 +240,12 @@ class TabPFNPredictor(BasePredictor):
             "p_msi": prob,
             "y_pred": pred_class,
             "prediction": pred_label,
+            "threshold": self.threshold,
+            "base_prob": base_prob,
+            "site_attributions": site_attributions,
+            "top_driver_site": top_site,
+            "top_driver_phi": top_phi,
+            "waterfall_fig": fig,
         }
 
     def predict_batch(
@@ -181,3 +293,4 @@ class TabPFNPredictor(BasePredictor):
         tsv_files = sorted(input_dir.glob(f"*.{file_ext}"))
         print(f"Found {len(tsv_files)} files to process in {input_dir}")
         return self.predict_batch(tsv_files, output_tsv=output_tsv)
+
