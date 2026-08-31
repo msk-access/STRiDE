@@ -36,6 +36,7 @@ process STRIDE_RUN {
     tuple val(meta), path("features/*.tsv"),        emit: features
     tuple val(meta), path("predictions/*_msi.txt"), emit: predictions
     tuple val(meta), path("qc/*_qc.html"),          emit: qc_reports, optional: true
+    tuple val(meta), path("qc/*_drivers.tsv"),      emit: drivers,    optional: true
     path "versions.yml",                            emit: versions
 
     // nf-core conditional execution guard
@@ -55,6 +56,9 @@ process STRIDE_RUN {
     // QC report generation is controlled by params.generate_qc
     def qc_flag  = params.generate_qc ? '--generate-qc' : ''
 
+    // ShapIQ model explainability
+    def explain_flag = params.explain ? '--explain' : '--no-explain'
+
     // Site list and model: pass only if real files (not NO_FILE sentinel)
     def site_arg  = site_list.name  != 'NO_FILE' ? "--site-list ${site_list}"    : ''
     def model_arg = model_joblib.name != 'NO_FILE' ? "--model-joblib ${model_joblib}" : ''
@@ -68,6 +72,7 @@ process STRIDE_RUN {
     echo "Site list:  ${site_list}"
     echo "Model:      ${model_joblib}"
     echo "QC:         ${params.generate_qc}"
+    echo "Explain:    ${params.explain}"
     echo "CPUs:       ${task.cpus}"
     echo "Memory:     ${task.memory}"
     echo "────────────────────────────────────────────────"
@@ -84,7 +89,9 @@ process STRIDE_RUN {
         ${model_arg} \\
         ${norm_bc} \\
         ${qc_flag} \\
+        ${explain_flag} \\
         ${args}
+
 
     # nf-core version tracking
     cat <<-END_VERSIONS > versions.yml
