@@ -20,8 +20,9 @@ process STRIDE_QC {
     tuple val(meta), path(features_tsv), path(prediction_txt)
 
     output:
-    tuple val(meta), path("*_qc.html"), emit: qc_reports
-    path "versions.yml",                emit: versions
+    tuple val(meta), path("*_qc.html"),    emit: qc_reports
+    tuple val(meta), path("*_drivers.tsv"), emit: drivers, optional: true
+    path "versions.yml",                   emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -35,18 +36,24 @@ process STRIDE_QC {
         ? "--prediction ${prediction_txt}"
         : ''
 
+    // Explainability flag
+    def explain_flag = params.explain ? '--explain' : '--no-explain'
+
     """
     echo "── STRIDE_QC ────────────────────────────────────"
     echo "Sample:     ${prefix}"
     echo "Features:   ${features_tsv}"
     echo "Prediction: ${prediction_txt}"
+    echo "Explain:    ${params.explain}"
     echo "────────────────────────────────────────────────"
 
     stride qc \\
         --feature-tsv ${features_tsv} \\
         ${pred_arg} \\
         --output '${prefix}_qc.html' \\
+        ${explain_flag} \\
         ${args}
+
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
