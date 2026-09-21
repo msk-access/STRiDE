@@ -2,6 +2,7 @@ import io
 import os
 import sys
 import types
+
 import numpy as np
 
 try:
@@ -9,6 +10,7 @@ try:
     import torch.storage
 
 except ImportError:
+
     class MockDevice:
         def __init__(self, type="cpu", index=None):
             self.type = str(type)
@@ -61,7 +63,6 @@ except ImportError:
     sys.modules["torch.cuda"] = torch.cuda
 
 
-
 class GenericPickleObject:
     def __init__(self, *args, **kwargs):
         pass
@@ -101,7 +102,6 @@ class _AutoTabPFNModule(types.ModuleType):
         return GenericPickleObject
 
 
-
 class _TabPFNLoader:
     @staticmethod
     def create_module(spec):
@@ -118,11 +118,14 @@ class _TabPFNMetaFinder:
     def find_spec(cls, fullname, path, target=None):
         import importlib.machinery
 
-        if fullname.startswith("tabpfn.") or fullname == "tabpfn" or (fullname.startswith("torch.") and torch.__class__.__name__ == "MockTorch"):
+        if (
+            fullname.startswith("tabpfn.")
+            or fullname == "tabpfn"
+            or (fullname.startswith("torch.") and torch.__class__.__name__ == "MockTorch")
+        ):
             spec = importlib.machinery.ModuleSpec(fullname, _TabPFNLoader, is_package=True)
             return spec
         return None
-
 
 
 def setup_tabpfn_shims():
@@ -137,10 +140,6 @@ def setup_tabpfn_shims():
         sys.modules["tabpfn"] = _AutoTabPFNModule("tabpfn")
 
 
-
-
-
-
 def apply_cpu_patches():
     """
     Monkeypatch PyTorch storage reconstructors to force CPU loading of CUDA-saved tensors.
@@ -151,7 +150,6 @@ def apply_cpu_patches():
         return
 
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 
     # Force deserialization onto CPU
     if hasattr(torch.storage, "_typed_storage_reconstructor"):

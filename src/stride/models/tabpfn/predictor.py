@@ -13,7 +13,6 @@ from stride.utils.torch_patches import apply_cpu_patches, force_cpu, setup_tabpf
 DEFAULT_TABPFN_DIR = Path(__file__).parent
 
 
-
 class TabPFNPredictor(BasePredictor):
     def __init__(
         self,
@@ -75,7 +74,9 @@ class TabPFNPredictor(BasePredictor):
                 self.model = raw["model"]
                 self.imputer = raw.get("imputer", None)
                 self.selector = raw.get("selector", None)
-                self.expected_columns = raw.get("best_columns", raw.get("combo_cols", raw.get("feature_columns", [])))
+                self.expected_columns = raw.get(
+                    "best_columns", raw.get("combo_cols", raw.get("feature_columns", []))
+                )
                 if "threshold" in raw:
                     self.threshold = float(raw["threshold"])
                 self._apply_device_fixes()
@@ -150,7 +151,6 @@ class TabPFNPredictor(BasePredictor):
             "prediction": pred_label,
         }
 
-
     def get_baseline_matrix(self, n_background: int = 30) -> np.ndarray:
         """Returns the background baseline matrix for Shapley attribution."""
         if hasattr(self.imputer, "statistics_") and self.imputer.statistics_ is not None:
@@ -214,7 +214,6 @@ class TabPFNPredictor(BasePredictor):
             feature_names=self.expected_columns,
             budget=budget,
         )
-
 
         site_attributions = aggregate_features_to_sites(
             feature_names=self.expected_columns,
@@ -293,4 +292,3 @@ class TabPFNPredictor(BasePredictor):
         tsv_files = sorted(input_dir.glob(f"*.{file_ext}"))
         print(f"Found {len(tsv_files)} files to process in {input_dir}")
         return self.predict_batch(tsv_files, output_tsv=output_tsv)
-

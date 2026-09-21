@@ -139,8 +139,13 @@ def generate_report(
         logger.warning("Feature TSV %s is empty.", feature_tsv)
         return
 
-    generate_html_report(df, output_path, prediction_result=prediction_result, attribution_result=attribution_result, top_n=top_n)
-
+    generate_html_report(
+        df,
+        output_path,
+        prediction_result=prediction_result,
+        attribution_result=attribution_result,
+        top_n=top_n,
+    )
 
 
 # ── Dashboard Cards ────────────────────────────────────────────────────────
@@ -154,9 +159,9 @@ def _waterfall_colour_gradient(values: pd.Series, base_rgb: tuple) -> list:
     """Generate a colour gradient from charcoal (low) to base_rgb (high)."""
     mx = values.max() or 1
     return [
-        f"rgba({int(48 + (base_rgb[0]-48)*(v/mx))}, "
-        f"{int(51 + (base_rgb[1]-51)*(v/mx))}, "
-        f"{int(61 + (base_rgb[2]-61)*(v/mx))}, 0.85)"
+        f"rgba({int(48 + (base_rgb[0] - 48) * (v / mx))}, "
+        f"{int(51 + (base_rgb[1] - 51) * (v / mx))}, "
+        f"{int(61 + (base_rgb[2] - 61) * (v / mx))}, 0.85)"
         for v in values
     ]
 
@@ -186,7 +191,7 @@ def _card_waterfalls(df: pd.DataFrame) -> go.Figure:
                 x=ds[col],
                 orientation="h",
                 marker_color=colours,
-                hovertemplate=("<b>%{y}</b><br>" f"{title}: %{{x:.4f}}<extra></extra>"),
+                hovertemplate=(f"<b>%{{y}}</b><br>{title}: %{{x:.4f}}<extra></extra>"),
                 showlegend=False,
             ),
             row=1,
@@ -374,8 +379,7 @@ def _card_entropy(df: pd.DataFrame) -> go.Figure:
             },
             hovertext=df["locus"],
             hovertemplate=(
-                "<b>%{hovertext}</b><br>"
-                "Normal ent: %{x:.2f}<br>Tumor ent: %{y:.2f}<extra></extra>"
+                "<b>%{hovertext}</b><br>Normal ent: %{x:.2f}<br>Tumor ent: %{y:.2f}<extra></extra>"
             ),
         )
     )
@@ -434,7 +438,7 @@ def _card_quality_metrics(df: pd.DataFrame) -> list[go.Figure]:
                     showlegend=False,
                     hovertext=df["locus"],
                     hovertemplate=(
-                        "<b>%{hovertext}</b><br>" f"{y_label}: %{{y:.2f}}<extra></extra>"
+                        f"<b>%{{hovertext}}</b><br>{y_label}: %{{y:.2f}}<extra></extra>"
                     ),
                 )
             )
@@ -863,10 +867,14 @@ def _build_mini_site_fig(row: pd.Series, rank: int, phi: float | None = None) ->
     t_raw_l = [int(v) for v in t_raw]
     ref_count = int(row["repeat_count"])
 
-    nz = [int(i) for i in np.nonzero(t_norm)[0].tolist()] + [int(i) for i in np.nonzero(n_norm)[0].tolist()] + [ref_count]
+    nz = (
+        [int(i) for i in np.nonzero(t_norm)[0].tolist()]
+        + [int(i) for i in np.nonzero(n_norm)[0].tolist()]
+        + [ref_count]
+    )
     nz_min = min(nz) if nz else 0
     nz_max = max(nz) if nz else len(x_list)
-    
+
     # Provide wide x-axis view so grouped bars remain slender and readable
     xmin = max(0, min(nz_min - 5, 0 if ref_count < 18 else nz_min - 6))
     xmax = max(nz_max + 6, xmin + 22)
@@ -920,12 +928,16 @@ def _build_mini_site_fig(row: pd.Series, rank: int, phi: float | None = None) ->
         bargap=0.15,
         bargroupgap=0.05,
         showlegend=False,
-        xaxis={"range": [xmin, xmax], "gridcolor": CLR_GRID, "zerolinecolor": CLR_GRID, "tickfont": {"size": 9}},
+        xaxis={
+            "range": [xmin, xmax],
+            "gridcolor": CLR_GRID,
+            "zerolinecolor": CLR_GRID,
+            "tickfont": {"size": 9},
+        },
         yaxis={"gridcolor": CLR_GRID, "zerolinecolor": CLR_GRID, "tickfont": {"size": 9}},
     )
     _apply_theme(fig)
     return fig
-
 
 
 def _build_top_single_explorer_fig(df_top: pd.DataFrame) -> go.Figure:
@@ -945,9 +957,42 @@ def _build_top_single_explorer_fig(df_top: pd.DataFrame) -> go.Figure:
     buttons = []
 
     # 3 always-visible legend-only traces
-    fig.add_trace(go.Bar(x=[None], y=[None], name="Normal", marker_color=CLR_NORMAL, opacity=0.75, showlegend=True, legendgroup="Normal", visible=True))
-    fig.add_trace(go.Bar(x=[None], y=[None], name="Tumor", marker_color=CLR_TUMOR, opacity=0.85, showlegend=True, legendgroup="Tumor", visible=True))
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", line={"color": CLR_GOOD, "width": 2, "dash": "dash"}, name="Ref", showlegend=True, legendgroup="Ref", visible=True))
+    fig.add_trace(
+        go.Bar(
+            x=[None],
+            y=[None],
+            name="Normal",
+            marker_color=CLR_NORMAL,
+            opacity=0.75,
+            showlegend=True,
+            legendgroup="Normal",
+            visible=True,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=[None],
+            y=[None],
+            name="Tumor",
+            marker_color=CLR_TUMOR,
+            opacity=0.85,
+            showlegend=True,
+            legendgroup="Tumor",
+            visible=True,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="lines",
+            line={"color": CLR_GOOD, "width": 2, "dash": "dash"},
+            name="Ref",
+            showlegend=True,
+            legendgroup="Ref",
+            visible=True,
+        )
+    )
     n_legend_traces = 3
 
     for i, row in df_top.iterrows():
@@ -995,7 +1040,14 @@ def _build_top_single_explorer_fig(df_top: pd.DataFrame) -> go.Figure:
             )
         )
         # Trace 3: Ref
-        max_y = max(float(n_norm.max()) if len(n_norm) else 0, float(t_norm.max()) if len(t_norm) else 0, 0.01) * 1.1
+        max_y = (
+            max(
+                float(n_norm.max()) if len(n_norm) else 0,
+                float(t_norm.max()) if len(t_norm) else 0,
+                0.01,
+            )
+            * 1.1
+        )
         fig.add_trace(
             go.Scatter(
                 x=[ref_count, ref_count],
@@ -1021,13 +1073,13 @@ def _build_top_single_explorer_fig(df_top: pd.DataFrame) -> go.Figure:
 
         buttons.append(
             {
-                "label": f"#{i+1} {row['locus']}",
+                "label": f"#{i + 1} {row['locus']}",
                 "method": "update",
                 "args": [
                     {"visible": vis},
                     {"title": ""},
                     {
-                        "_locus": f"#{i+1} {row['locus']}",
+                        "_locus": f"#{i + 1} {row['locus']}",
                         "_phi": phi_fmt,
                         "_l1": float(row["l1_distance"]),
                         "_l2": float(row["l2_distance"]),
@@ -1085,7 +1137,11 @@ def _build_top_msi_sites(
     df_work = df.copy()
     has_shapiq = False
 
-    if attribution_result and "site_attributions" in attribution_result and attribution_result["site_attributions"]:
+    if (
+        attribution_result
+        and "site_attributions" in attribution_result
+        and attribution_result["site_attributions"]
+    ):
         site_atts = attribution_result["site_attributions"]
         phi_map = {}
         rank_map = {}
@@ -1112,13 +1168,26 @@ def _build_top_msi_sites(
         df_work["phi"] = phis
         df_work["model_rank"] = ranks
 
-        df_top = df_work[df_work["phi"].notnull()].sort_values("model_rank").head(top_n).reset_index(drop=True)
+        df_top = (
+            df_work[df_work["phi"].notnull()]
+            .sort_values("model_rank")
+            .head(top_n)
+            .reset_index(drop=True)
+        )
         if len(df_top) > 0:
             has_shapiq = True
         else:
-            df_top = df_work.sort_values("wasserstein_distance", ascending=False).head(top_n).reset_index(drop=True)
+            df_top = (
+                df_work.sort_values("wasserstein_distance", ascending=False)
+                .head(top_n)
+                .reset_index(drop=True)
+            )
     else:
-        df_top = df_work.sort_values("wasserstein_distance", ascending=False).head(top_n).reset_index(drop=True)
+        df_top = (
+            df_work.sort_values("wasserstein_distance", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
 
     if len(df_top) == 0:
         return "", ""
@@ -1144,12 +1213,14 @@ def _build_top_msi_sites(
         badge_html = _quality_badge(row)
 
         mini_fig = _build_mini_site_fig(row, rank=rank_num, phi=phi_val)
-        mini_plot_html = mini_fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+        mini_plot_html = mini_fig.to_html(
+            full_html=False, include_plotlyjs=False, config={"displayModeBar": False}
+        )
 
         grid_cards.append(f"""
         <div class="mini-site-card">
             <div class="mini-card-header">
-                <div class="mini-card-title">#{rank_num} {row['locus']}</div>
+                <div class="mini-card-title">#{rank_num} {row["locus"]}</div>
                 <div>{badge_html}</div>
             </div>
             <div class="mini-card-stats">
@@ -1165,7 +1236,9 @@ def _build_top_msi_sites(
 
     # Build Single Locus Explorer for Top 15
     top_single_fig = _build_top_single_explorer_fig(df_top)
-    top_single_plot_html = top_single_fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": "hover"})
+    top_single_plot_html = top_single_fig.to_html(
+        full_html=False, include_plotlyjs=False, config={"displayModeBar": "hover"}
+    )
 
     single_html = f"""
     <div id="top-single-view" class="explorer-wrap" style="display:none; margin-top:16px;">
@@ -1224,7 +1297,6 @@ def _build_top_msi_sites(
 
     tab_btn = f"""<button class="tab-btn active" data-target="tab-top-sites" role="tab" aria-selected="true">Top MSI Sites (Top {len(df_top)})</button>"""
     return tab_btn, tab_content
-
 
 
 # ── Data Table (Tabulator.js) ──────────────────────────────────────────────
@@ -1770,7 +1842,6 @@ body {{
 """
 
 
-
 _JS = """
 // ── Theme Toggle ──────────────────────────────────
 function strideToggleTheme() {
@@ -2245,7 +2316,6 @@ document.addEventListener('DOMContentLoaded', function() {
 """
 
 
-
 def generate_html_report(
     df: pd.DataFrame,
     output_path: str,
@@ -2338,7 +2408,11 @@ def generate_html_report(
     )
 
     # ── Attribution / ShapIQ Processing ────────────────────────────────────
-    att_res = attribution_result or (prediction_result if (prediction_result and "site_attributions" in prediction_result) else None)
+    att_res = attribution_result or (
+        prediction_result
+        if (prediction_result and "site_attributions" in prediction_result)
+        else None
+    )
     attribution_tab_btn = ""
     attribution_tab_content = ""
     driver_tabulator_js = ""
@@ -2353,6 +2427,7 @@ def generate_html_report(
         # Build interactive waterfall plot
         try:
             from stride.core.explainability import build_waterfall_figure
+
             wf_fig = build_waterfall_figure(
                 sample_id=sample_id_str,
                 p_msi=p_msi_val,
@@ -2376,20 +2451,32 @@ def generate_html_report(
             sid = s.get("site_id", "")
             phi_val = float(s.get("phi", 0.0))
             direction = "MSI (+)" if phi_val >= 0 else "MSS (-)"
-            driver_rows.append({
-                "rank": r_idx,
-                "site_id": sid,
-                "phi": round(phi_val, 6),
-                "direction": direction,
-                "entropy_d": round(float(s.get("entropy_diff", s.get("entropy_d", 0.0))), 4) if ("entropy_diff" in s or "entropy_d" in s) else None,
-                "tumor_entropy": round(float(s.get("tumor_entropy", 0.0)), 4) if "tumor_entropy" in s else None,
-                "l1": round(float(s.get("l1_distance", s.get("l1", 0.0))), 4) if ("l1_distance" in s or "l1" in s) else None,
-                "l2": round(float(s.get("l2_distance", s.get("l2", 0.0))), 4) if ("l2_distance" in s or "l2" in s) else None,
-            })
+            driver_rows.append(
+                {
+                    "rank": r_idx,
+                    "site_id": sid,
+                    "phi": round(phi_val, 6),
+                    "direction": direction,
+                    "entropy_d": round(float(s.get("entropy_diff", s.get("entropy_d", 0.0))), 4)
+                    if ("entropy_diff" in s or "entropy_d" in s)
+                    else None,
+                    "tumor_entropy": round(float(s.get("tumor_entropy", 0.0)), 4)
+                    if "tumor_entropy" in s
+                    else None,
+                    "l1": round(float(s.get("l1_distance", s.get("l1", 0.0))), 4)
+                    if ("l1_distance" in s or "l1" in s)
+                    else None,
+                    "l2": round(float(s.get("l2_distance", s.get("l2", 0.0))), 4)
+                    if ("l2_distance" in s or "l2" in s)
+                    else None,
+                }
+            )
         driver_table_json = json.dumps(driver_rows)
 
         n_pos_drivers = sum(1 for s in site_atts if float(s.get("phi", 0.0)) > 0)
-        sum_pos_phi = sum(float(s.get("phi", 0.0)) for s in site_atts if float(s.get("phi", 0.0)) > 0)
+        sum_pos_phi = sum(
+            float(s.get("phi", 0.0)) for s in site_atts if float(s.get("phi", 0.0)) > 0
+        )
 
         attribution_tab_content = f"""
     <div id="tab-attribution" class="tab-content" role="tabpanel">
@@ -2402,7 +2489,7 @@ def generate_html_report(
                 <div style="display:flex; flex-wrap:wrap; gap:24px; margin-bottom:20px;">
                     <div style="flex:1; min-width:180px; background:var(--bg-page); padding:16px; border-radius:8px; border:1px solid var(--bg-card-border);">
                         <div style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase;">Predicted Status</div>
-                        <div style="font-size:22px; font-weight:bold; color:{'#d9534f' if msi_status == 'MSI' else '#5AD8A6'}; margin-top:4px;">{msi_status}</div>
+                        <div style="font-size:22px; font-weight:bold; color:{"#d9534f" if msi_status == "MSI" else "#5AD8A6"}; margin-top:4px;">{msi_status}</div>
                         <div style="color:var(--text-secondary); font-size:11px; margin-top:4px;">Cutoff Threshold: {thr_val:.4f}</div>
                     </div>
                     <div style="flex:1; min-width:180px; background:var(--bg-page); padding:16px; border-radius:8px; border:1px solid var(--bg-card-border);">
@@ -2431,7 +2518,6 @@ def generate_html_report(
         </div>
     </div>
         """
-
 
         driver_tabulator_js = f"""
     var driverData = {driver_table_json};
@@ -2539,7 +2625,7 @@ def generate_html_report(
         {{title:"T_MapQ", field:"t_mapq", sorter:"number", width:85, hozAlign:"right",
          formatter:function(cell){{
            var v=cell.getValue();
-           if(v<{QC_THRESHOLDS['mapq']}){{cell.getElement().style.color="{CLR_WARN}";cell.getElement().style.fontWeight="600";}}
+           if(v<{QC_THRESHOLDS["mapq"]}){{cell.getElement().style.color="{CLR_WARN}";cell.getElement().style.fontWeight="600";}}
            return v.toFixed(1);
          }},
          headerFilter:"number"}},
@@ -2584,7 +2670,9 @@ def generate_html_report(
     """
 
     # ── Top MSI Sites Tab ──────────────────────────────────────────────────
-    top_tab_btn, top_tab_content = _build_top_msi_sites(df, attribution_result=attribution_result, top_n=15)
+    top_tab_btn, top_tab_content = _build_top_msi_sites(
+        df, attribution_result=attribution_result, top_n=15
+    )
 
     # ── Assemble ───────────────────────────────────────────────────────────
     html = f"""<!DOCTYPE html>
@@ -2710,7 +2798,7 @@ def generate_html_report(
                 <h3>Sequencing Quality</h3>
                 <p>MapQ, BaseQ, coverage, and insert-size distributions help distinguish biological signal from artifacts.</p>
             </div>
-            {''.join(quality_cards)}
+            {"".join(quality_cards)}
             {insert_html}
         </div>
     </div>

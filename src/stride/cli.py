@@ -146,13 +146,12 @@ def predict(
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """Predict MSI status from pre-computed feature TSVs using SVM or TabPFN."""
-    from rich.console import Console
-    from rich.table import Table
-
     import glob
     import os
-    from pathlib import Path
+
     import pandas as pd
+    from rich.console import Console
+    from rich.table import Table
 
     from .models import get_predictor
     from .predictor import write_one_output_per_sample
@@ -205,8 +204,16 @@ def predict(
 
     norm_bc = matched_norm_sample_barcode or ""
     score_col = "p_msi" if "p_msi" in results_df.columns else "score"
-    scores = results_df[score_col].fillna(0.0).round(6).tolist() if score_col in results_df.columns else [0.0] * len(sample_ids)
-    preds = results_df["prediction"].tolist() if "prediction" in results_df.columns else ["MSS"] * len(sample_ids)
+    scores = (
+        results_df[score_col].fillna(0.0).round(6).tolist()
+        if score_col in results_df.columns
+        else [0.0] * len(sample_ids)
+    )
+    preds = (
+        results_df["prediction"].tolist()
+        if "prediction" in results_df.columns
+        else ["MSS"] * len(sample_ids)
+    )
 
     df_preds = pd.DataFrame(
         {
@@ -398,7 +405,9 @@ def qc(
         "qc_report.html", "--output", help="Output path for the HTML report."
     ),
     explain: bool = typer.Option(
-        True, "--explain/--no-explain", help="Compute ShapIQ site attributions and embed Waterfall chart."
+        True,
+        "--explain/--no-explain",
+        help="Compute ShapIQ site attributions and embed Waterfall chart.",
     ),
     shapiq_budget: int = typer.Option(
         128, "--shapiq-budget", help="Evaluation budget for Shapley value sampling."
@@ -406,8 +415,9 @@ def qc(
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """Generate an interactive HTML QC report for a sample with ShapIQ explainability."""
-    import pandas as pd
     from pathlib import Path
+
+    import pandas as pd
 
     from .models import get_predictor
     from .qc import generate_report, is_qc_available
@@ -424,8 +434,12 @@ def qc(
             df_pred = pd.read_csv(prediction, sep="\t")
             if not df_pred.empty:
                 pred_info = {
-                    "msi_status": df_pred.iloc[0].get("MSI_class_predicted", df_pred.iloc[0].get("prediction", "UNKNOWN")),
-                    "msi_score": float(df_pred.iloc[0].get("msi_score", df_pred.iloc[0].get("p_msi", 0.0))),
+                    "msi_status": df_pred.iloc[0].get(
+                        "MSI_class_predicted", df_pred.iloc[0].get("prediction", "UNKNOWN")
+                    ),
+                    "msi_score": float(
+                        df_pred.iloc[0].get("msi_score", df_pred.iloc[0].get("p_msi", 0.0))
+                    ),
                 }
         except Exception as e:
             logger.warning(f"Failed to parse prediction file: {e}")
@@ -446,6 +460,7 @@ def qc(
                 out_p = Path(output)
                 driver_tsv = out_p.parent / f"{out_p.stem.replace('_qc', '')}_drivers.tsv"
                 from stride.core.explainability import export_driver_tsv
+
                 export_driver_tsv(att_info["site_attributions"], driver_tsv)
                 logger.info("Saved driver loci attributions to %s", driver_tsv)
         except Exception as e:
@@ -457,7 +472,6 @@ def qc(
         prediction_result=pred_info,
         attribution_result=att_info,
     )
-
 
 
 # ---------------------------------------------------------------------------
