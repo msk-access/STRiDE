@@ -80,7 +80,9 @@ def get_predictor(method: str = "svm", **kwargs):
             elif method_key == "tabpfn_access_impact":
                 variant = "access_impact"
 
-            return TabPFNPredictor(variant=variant, **kwargs) if variant else TabPFNPredictor(**kwargs)
+            return (
+                TabPFNPredictor(variant=variant, **kwargs) if variant else TabPFNPredictor(**kwargs)
+            )
         except ImportError as err:
             raise ImportError(
                 "TabPFN predictor requires optional dependencies. Install via: pip install '.[tabpfn]'"

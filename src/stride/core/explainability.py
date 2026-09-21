@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -20,11 +20,15 @@ logger = logging.getLogger(__name__)
 # Library availability flags
 SHAPIQ_AVAILABLE = False
 try:
-    from tabpfn_extensions.interpretability.shapiq import get_tabpfn_imputation_explainer
+    from tabpfn_extensions.interpretability.shapiq import (
+        get_tabpfn_imputation_explainer,  # noqa: F401
+    )
+
     SHAPIQ_AVAILABLE = True
 except ImportError:
     try:
         import shapiq  # noqa: F401
+
         SHAPIQ_AVAILABLE = True
     except ImportError:
         SHAPIQ_AVAILABLE = False
@@ -32,6 +36,7 @@ except ImportError:
 SHAP_AVAILABLE = False
 try:
     import shap
+
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
@@ -53,12 +58,12 @@ def compute_sample_shapley_values(
     model: Any,
     x_sample: np.ndarray,
     background_matrix: np.ndarray,
-    feature_names: List[str],
+    feature_names: list[str],
     budget: int = 128,
 ) -> np.ndarray:
     """
     Computes Shapley values (phi) for a single sample across selected features.
-    
+
     Execution Strategy:
     1. PriorLabs ShapIQ extension (if available)
     2. Standard SHAP SamplingExplainer (if available)
@@ -70,7 +75,10 @@ def compute_sample_shapley_values(
     # 1. PriorLabs ShapIQ extension
     if SHAPIQ_AVAILABLE:
         try:
-            from tabpfn_extensions.interpretability.shapiq import get_tabpfn_imputation_explainer
+            from tabpfn_extensions.interpretability.shapiq import (
+                get_tabpfn_imputation_explainer,  # noqa: F401
+            )
+
             explainer = get_tabpfn_imputation_explainer(
                 model=model,
                 data=background_matrix,
@@ -89,6 +97,7 @@ def compute_sample_shapley_values(
     # 2. Standard SHAP Explainer
     if SHAP_AVAILABLE:
         try:
+
             def predict_fn(X_eval):
                 raw = model.predict_proba(X_eval)
                 return extract_positive_probs(raw)
@@ -141,15 +150,15 @@ def compute_sample_shapley_values(
 
 
 def aggregate_features_to_sites(
-    feature_names: List[str],
+    feature_names: list[str],
     x_sample: np.ndarray,
     phi_features: np.ndarray,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Aggregates multi-metric feature attributions into per-microsatellite locus Shapley scores.
     """
-    site_phi_map: Dict[str, float] = {}
-    site_metrics_map: Dict[str, Dict[str, float]] = {}
+    site_phi_map: dict[str, float] = {}
+    site_metrics_map: dict[str, dict[str, float]] = {}
 
     for f_idx, feat_col in enumerate(feature_names):
         phi_val = float(phi_features[f_idx])
@@ -165,7 +174,7 @@ def aggregate_features_to_sites(
 
     site_attributions = []
     for sid, s_phi in site_phi_map.items():
-        entry: Dict[str, Any] = {
+        entry: dict[str, Any] = {
             "site_id": sid,
             "phi": s_phi,
         }
@@ -190,9 +199,9 @@ def build_waterfall_figure(
     p_msi: float,
     threshold: float,
     base_prob: float,
-    site_attributions: List[Dict[str, Any]],
+    site_attributions: list[dict[str, Any]],
     top_n: int = 15,
-    true_label: Optional[Union[int, str]] = None,
+    true_label: int | str | None = None,
 ) -> Any:
     """
     Builds an interactive Plotly horizontal Waterfall chart showing top contributing loci.
@@ -223,7 +232,9 @@ def build_waterfall_figure(
 
         feat_details = []
         for k, v in s.items():
-            if k not in ("site_id", "phi", "chrom", "pos", "repeat_info") and isinstance(v, (int, float)):
+            if k not in ("site_id", "phi", "chrom", "pos", "repeat_info") and isinstance(
+                v, (int, float)
+            ):
                 feat_details.append(f"{k}: {v:.3f}")
         feat_str = f" | {', '.join(feat_details)}" if feat_details else ""
 
@@ -234,7 +245,9 @@ def build_waterfall_figure(
         # Color: Coral/Red for MSI (+), Steel Blue for MSS (-)
         colors.append("#d9534f" if val >= 0 else "#337ab7")
         direction_str = "Pushes toward MSI" if val >= 0 else "Pushes toward MSS"
-        hover_texts.append(f"<b>{short_sid}</b><br>Attribution (\u03c6): <b>{val:+.4f}</b> ({direction_str}){feat_str}")
+        hover_texts.append(
+            f"<b>{short_sid}</b><br>Attribution (\u03c6): <b>{val:+.4f}</b> ({direction_str}){feat_str}"
+        )
 
     fig = go.Figure()
     fig.add_trace(
@@ -242,10 +255,10 @@ def build_waterfall_figure(
             y=labels,
             x=values,
             orientation="h",
-            marker=dict(
-                color=colors,
-                line=dict(color="#1a1d29", width=1),
-            ),
+            marker={
+                "color": colors,
+                "line": {"color": "#1a1d29", "width": 1},
+            },
             text=[f"{v:+.4f}" for v in values],
             textposition="outside",
             hovertext=hover_texts,
@@ -268,26 +281,25 @@ def build_waterfall_figure(
         yaxis_title="",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, sans-serif", color="#e8eaed", size=12),
-        margin=dict(l=150, r=60, t=70, b=50),
-        xaxis=dict(
-            gridcolor="#30333D",
-            zerolinecolor="#e8eaed",
-            zerolinewidth=1.5,
-        ),
-        yaxis=dict(
-            gridcolor="#30333D",
-        ),
+        font={"family": "Inter, sans-serif", "color": "#e8eaed", "size": 12},
+        margin={"l": 150, "r": 60, "t": 70, "b": 50},
+        xaxis={
+            "gridcolor": "#30333D",
+            "zerolinecolor": "#e8eaed",
+            "zerolinewidth": 1.5,
+        },
+        yaxis={
+            "gridcolor": "#30333D",
+        },
         height=max(450, top_n * 32),
     )
-
 
     return fig
 
 
 def export_driver_tsv(
-    site_attributions: List[Dict[str, Any]],
-    out_tsv: Union[str, Path],
+    site_attributions: list[dict[str, Any]],
+    out_tsv: str | Path,
 ) -> Path:
     """Exports ranked site attributions to a TSV file."""
     out_tsv = Path(out_tsv)

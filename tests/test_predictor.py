@@ -136,13 +136,14 @@ class TestGetPredictorFactory:
     """Verify get_predictor creates appropriate predictor instances."""
 
     def test_get_svm_predictor(self):
-        from stride.models import get_predictor, SVMPredictor
+        from stride.models import SVMPredictor, get_predictor
 
         pred = get_predictor("svm")
         assert isinstance(pred, SVMPredictor)
 
     def test_get_tabpfn_predictor_variants(self, monkeypatch):
         import pytest
+
         from stride.models import get_predictor
 
         try:
@@ -164,4 +165,3 @@ class TestGetPredictorFactory:
         except ImportError:
             with pytest.raises(ImportError, match="TabPFN"):
                 get_predictor("tabpfn")
-
