@@ -1,15 +1,18 @@
-import pysam
-import numpy as np
 import logging
 from datetime import datetime
+
+import numpy as np
+import pysam
 from scipy.stats import chi2_contingency, entropy, wasserstein_distance
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("MSIProfileGenerator")
+# Module logger — configured by the CLI layer via utils.setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class MSIProfileGenerator:
-    def __init__(self, sites_file, tumor_bam_path, normal_bam_path, min_coverage=20, max_repeat_bins=100):
+    def __init__(
+        self, sites_file, tumor_bam_path, normal_bam_path, min_coverage=20, max_repeat_bins=100
+    ):
         self.sites_file = sites_file
         self.tumor_bam_path = tumor_bam_path
         self.normal_bam_path = normal_bam_path
@@ -18,11 +21,29 @@ class MSIProfileGenerator:
         self.tumor_bam = pysam.AlignmentFile(self.tumor_bam_path, "rb")
         self.normal_bam = pysam.AlignmentFile(self.normal_bam_path, "rb")
 
+    # -- Context manager to prevent BAM file handle leaks -----------------
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close BAM file handles on exit."""
+        self.close()
+        return False
+
+    def close(self):
+        """Explicitly close the underlying BAM file handles."""
+        for bam in (self.tumor_bam, self.normal_bam):
+            try:
+                bam.close()
+            except Exception:
+                pass
+
     def parse_sites(self):
-        with open(self.sites_file, 'r') as f:
+        with open(self.sites_file) as f:
             _ = next(f)  # header
             for line in f:
-                yield line.strip().split('\t')
+                yield line.strip().split("\t")
 
     def analyze_site(self, site):
         chrom, start, unit_len, _, times, *_, repeat_unit, left_flank, right_flank = site
@@ -48,15 +69,41 @@ class MSIProfileGenerator:
             return None
 
         try:
-            tumor_freq, tumor_mapq, tumor_bq, tumor_insert_all, tumor_insert_ref, tumor_insert_alt = self.get_repeat_frequencies(
-                self.tumor_bam.fetch(chrom, start, end), repeat_unit, left_flank, right_flank, start, end, times
+            (
+                tumor_freq,
+                tumor_mapq,
+                tumor_bq,
+                tumor_insert_all,
+                tumor_insert_ref,
+                tumor_insert_alt,
+            ) = self.get_repeat_frequencies(
+                self.tumor_bam.fetch(chrom, start, end),
+                repeat_unit,
+                left_flank,
+                right_flank,
+                start,
+                end,
+                times,
             )
-            normal_freq, normal_mapq, normal_bq, normal_insert_all, normal_insert_ref, normal_insert_alt = self.get_repeat_frequencies(
-                self.normal_bam.fetch(chrom, start, end), repeat_unit, left_flank, right_flank, start, end, times
+            (
+                normal_freq,
+                normal_mapq,
+                normal_bq,
+                normal_insert_all,
+                normal_insert_ref,
+                normal_insert_alt,
+            ) = self.get_repeat_frequencies(
+                self.normal_bam.fetch(chrom, start, end),
+                repeat_unit,
+                left_flank,
+                right_flank,
+                start,
+                end,
+                times,
             )
 
             if sum(tumor_freq) < self.min_coverage or sum(normal_freq) < self.min_coverage:
-                logger.info(f"Skipped: summed frequency below min_coverage")
+                logger.info("Skipped: summed frequency below min_coverage")
                 return None
 
             idx = np.union1d(np.nonzero(tumor_freq)[0], np.nonzero(normal_freq)[0])
@@ -74,25 +121,28 @@ class MSIProfileGenerator:
             tumor_entropy_val = shannon_entropy(tumor_freq)
             normal_entropy_val = shannon_entropy(normal_freq)
 
-            tumor_total = np.sum(tumor_freq)
-            normal_total = np.sum(normal_freq)
+            tumor_total: float = np.sum(tumor_freq)
+            normal_total: float = np.sum(normal_freq)
 
             norm_tumor = tumor_freq / tumor_total if tumor_total > 0 else np.zeros_like(tumor_freq)
-            norm_normal = normal_freq / normal_total if normal_total > 0 else np.zeros_like(normal_freq)
+            norm_normal = (
+                normal_freq / normal_total if normal_total > 0 else np.zeros_like(normal_freq)
+            )
 
-            l1_dist = np.sum(np.abs(norm_tumor - norm_normal))
+            l1_dist: float = np.sum(np.abs(norm_tumor - norm_normal))
             l2_dist = np.sqrt(np.sum((norm_tumor - norm_normal) ** 2))
             wass_dist = wasserstein_distance(norm_tumor, norm_normal)
 
             allele_thresholds = [1, 5, 10, 15, 20, 25, 30]
             allele_diffs = {
-                f"n_alleles_diff_{thresh}": count_alleles_above_thresh(tumor_freq, threshold=thresh) -
-                                          count_alleles_above_thresh(normal_freq, threshold=thresh)
+                f"n_alleles_diff_{thresh}": count_alleles_above_thresh(tumor_freq, threshold=thresh)
+                - count_alleles_above_thresh(normal_freq, threshold=thresh)
                 for thresh in allele_thresholds
             }
 
-            norm_allele_diffs = {
-                f"n_alleles_diff_norm_{int(thresh * 100)}": np.sum(norm_tumor >= thresh) - np.sum(norm_normal >= thresh)
+            norm_allele_diffs: dict[str, float] = {
+                f"n_alleles_diff_norm_{int(thresh * 100)}": np.sum(norm_tumor >= thresh)
+                - np.sum(norm_normal >= thresh)
                 for thresh in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06]
             }
 
@@ -128,13 +178,15 @@ class MSIProfileGenerator:
                 "wasserstein_distance": wass_dist,
                 "p_value": p_value,
                 **allele_diffs,
-                **norm_allele_diffs
+                **norm_allele_diffs,
             }
         except Exception as e:
             logger.error(f"Error processing site {site}: {e}")
             return None
 
-    def get_repeat_frequencies(self, reads, repeat_unit, left_flank, right_flank, start, end, ref_repeat_count):
+    def get_repeat_frequencies(
+        self, reads, repeat_unit, left_flank, right_flank, start, end, ref_repeat_count
+    ):
         freq = np.zeros(self.max_repeat_bins, dtype=int)
         map_quals = []
         base_quals = []
@@ -174,7 +226,9 @@ class MSIProfileGenerator:
                 count += 1
                 pos += len(repeat_unit)
                 if seq.startswith(right, pos):
-                    if (len(repeat_unit) == 1 and count >= 5) or (len(repeat_unit) > 1 and count >= 3):
+                    if (len(repeat_unit) == 1 and count >= 5) or (
+                        len(repeat_unit) > 1 and count >= 3
+                    ):
                         return count
                     else:
                         return 0
@@ -182,51 +236,125 @@ class MSIProfileGenerator:
         return 0
 
     def run(self, output_tsv):
+        """Analyze all sites and write feature TSV.
+
+        Uses a Rich progress bar to show real-time processing status.
+        Logs a summary of sites analyzed, skipped, and total time.
+        """
+        from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
         logger.info("Starting MSI analysis...")
         start_time = datetime.now()
 
-        results = [self.analyze_site(site) for site in self.parse_sites()]
+        # Pre-read sites so we can show accurate progress
+        sites = list(self.parse_sites())
+        total_sites = len(sites)
+        logger.info("Loaded %d sites from %s", total_sites, self.sites_file)
+
+        results = []
+        analyzed = 0
+        skipped = 0
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total})"),
+            TimeElapsedColumn(),
+        ) as progress:
+            task = progress.add_task("Analyzing sites", total=total_sites)
+            for site in sites:
+                result = self.analyze_site(site)
+                if result is not None:
+                    results.append(result)
+                    analyzed += 1
+                else:
+                    skipped += 1
+                progress.advance(task)
 
         header = [
-            "chrom", "start", "unit_len", "repeat_unit", "repeat_count", "left_flank", "right_flank",
-            "normal_freqs", "tumor_freqs",
-            "normal_norm_freqs", "tumor_norm_freqs",
-            "normal_total_coverage", "tumor_total_coverage",
-            "normal_mapq_mean", "tumor_mapq_mean",
-            "normal_bq_mean", "tumor_bq_mean",
-            "normal_insert_mean_all", "tumor_insert_mean_all",
-            "normal_insert_mean_ref", "tumor_insert_mean_ref",
-            "normal_insert_mean_alt", "tumor_insert_mean_alt",
-            "normal_entropy", "tumor_entropy", "entropy_diff",
-            "l1_distance", "l2_distance", "wasserstein_distance", "p_value"
+            "chrom",
+            "start",
+            "unit_len",
+            "repeat_unit",
+            "repeat_count",
+            "left_flank",
+            "right_flank",
+            "normal_freqs",
+            "tumor_freqs",
+            "normal_norm_freqs",
+            "tumor_norm_freqs",
+            "normal_total_coverage",
+            "tumor_total_coverage",
+            "normal_mapq_mean",
+            "tumor_mapq_mean",
+            "normal_bq_mean",
+            "tumor_bq_mean",
+            "normal_insert_mean_all",
+            "tumor_insert_mean_all",
+            "normal_insert_mean_ref",
+            "tumor_insert_mean_ref",
+            "normal_insert_mean_alt",
+            "tumor_insert_mean_alt",
+            "normal_entropy",
+            "tumor_entropy",
+            "entropy_diff",
+            "l1_distance",
+            "l2_distance",
+            "wasserstein_distance",
+            "p_value",
         ]
         header += [f"n_alleles_diff_{thresh}" for thresh in [1, 5, 10, 15, 20, 25, 30]]
         header += [f"n_alleles_diff_norm_{i}" for i in [1, 2, 3, 4, 5, 6]]
 
-        with open(output_tsv, 'w') as out_file:
+        with open(output_tsv, "w") as out_file:
             out_file.write("\t".join(header) + "\n")
-            for result in filter(None, results):
+            for result in results:
                 line = [
-                    result["chrom"], str(result["start"]), str(result["unit_len"]), result["repeat_unit"],
-                    str(result["repeat_count"]), result["left_flank"], result["right_flank"],
+                    result["chrom"],
+                    str(result["start"]),
+                    str(result["unit_len"]),
+                    result["repeat_unit"],
+                    str(result["repeat_count"]),
+                    result["left_flank"],
+                    result["right_flank"],
                     " ".join(map(str, result["normal_freqs"])),
                     " ".join(map(str, result["tumor_freqs"])),
                     " ".join(f"{v:.5f}" for v in result["normal_norm_freqs"]),
                     " ".join(f"{v:.5f}" for v in result["tumor_norm_freqs"]),
-                    str(result["normal_total_coverage"]), str(result["tumor_total_coverage"]),
-                    f"{result['normal_mapq_mean']:.2f}", f"{result['tumor_mapq_mean']:.2f}",
-                    f"{result['normal_bq_mean']:.2f}", f"{result['tumor_bq_mean']:.2f}",
-                    f"{result['normal_insert_mean_all']:.2f}", f"{result['tumor_insert_mean_all']:.2f}",
-                    f"{result['normal_insert_mean_ref']:.2f}", f"{result['tumor_insert_mean_ref']:.2f}",
-                    f"{result['normal_insert_mean_alt']:.2f}", f"{result['tumor_insert_mean_alt']:.2f}",
-                    f"{result['normal_entropy']:.4f}", f"{result['tumor_entropy']:.4f}", f"{result['entropy_diff']:.4f}",
-                    f"{result['l1_distance']:.4f}", f"{result['l2_distance']:.4f}", f"{result['wasserstein_distance']:.4f}",
-                    f"{result['p_value']:.6g}"
+                    str(result["normal_total_coverage"]),
+                    str(result["tumor_total_coverage"]),
+                    f"{result['normal_mapq_mean']:.2f}",
+                    f"{result['tumor_mapq_mean']:.2f}",
+                    f"{result['normal_bq_mean']:.2f}",
+                    f"{result['tumor_bq_mean']:.2f}",
+                    f"{result['normal_insert_mean_all']:.2f}",
+                    f"{result['tumor_insert_mean_all']:.2f}",
+                    f"{result['normal_insert_mean_ref']:.2f}",
+                    f"{result['tumor_insert_mean_ref']:.2f}",
+                    f"{result['normal_insert_mean_alt']:.2f}",
+                    f"{result['tumor_insert_mean_alt']:.2f}",
+                    f"{result['normal_entropy']:.4f}",
+                    f"{result['tumor_entropy']:.4f}",
+                    f"{result['entropy_diff']:.4f}",
+                    f"{result['l1_distance']:.4f}",
+                    f"{result['l2_distance']:.4f}",
+                    f"{result['wasserstein_distance']:.4f}",
+                    f"{result['p_value']:.6g}",
                 ]
-                line += [str(result[f"n_alleles_diff_{thresh}"]) for thresh in [1, 5, 10, 15, 20, 25, 30]]
+                line += [
+                    str(result[f"n_alleles_diff_{thresh}"]) for thresh in [1, 5, 10, 15, 20, 25, 30]
+                ]
                 line += [str(result[f"n_alleles_diff_norm_{i}"]) for i in [1, 2, 3, 4, 5, 6]]
                 assert len(header) == len(line), "Mismatch between header and output columns"
                 out_file.write("\t".join(line) + "\n")
 
-        end_time = datetime.now()
-        logger.info(f"MSI analysis completed in {end_time - start_time}.")
+        elapsed = datetime.now() - start_time
+        logger.info(
+            "MSI analysis complete: %d analyzed, %d skipped, %d total in %s",
+            analyzed,
+            skipped,
+            total_sites,
+            elapsed,
+        )

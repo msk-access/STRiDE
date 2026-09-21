@@ -1,0 +1,11 @@
+sample_id,tumor_bam,normal_bam,matched_norm_sample_barcode
+P-0109895-T03-XS2,/data1/share001/share/access_12_245/H/F/HF813332-T-standard.bam,/data1/share001/share/access_12_245/U/Q/UQ482605-N-standard.bam,P-0109895-N03-XS2
+P-0080677-T01-XS1,/data1/share001/share/access_12_245/J/C/JC602501-T-standard.bam,/data1/share001/share/access_12_245/F/B/FB317582-N-standard.bam,P-0080677-N01-XS1
+P-0061710-T03-XS1,/data1/share001/share/access_12_245/G/J/GJ692774-T-standard.bam,/data1/share001/share/access_12_245/L/U/LU193926-N-standard.bam,P-0061710-N02-XS1
+P-0064519-T09-XS1,/data1/share001/share/access_12_245/U/Y/UY059874-T-standard.bam,/data1/share001/share/access_12_245/L/D/LD082306-N-standard.bam,P-0064519-N09-XS1
+P-0062121-T08-XS1,/data1/share001/share/access_12_245/U/I/UI415532-T-standard.bam,/data1/share001/share/access_12_245/S/F/SF361709-N-standard.bam,P-0062121-N01-XS1
+P-0110369-T01-XS2,/data1/share001/share/access_12_245/J/M/JM682118-T-standard.bam,/data1/share001/share/access_12_245/E/I/EI075267-N-standard.bam,P-0110369-N01-XS2
+P-0107822-T01-XS2,/data1/share001/share/access_12_245/Y/X/YX905822-T-standard.bam,/data1/share001/share/access_12_245/L/G/LG010102-N-standard.bam,P-0107822-N01-XS2
+P-0100226-T01-XS1,/data1/share001/share/access_12_245/X/B/XB283791-T-standard.bam,/data1/share001/share/access_12_245/H/A/HA590065-N-standard.bam,P-0100226-N01-XS1
+P-0109883-T01-XS2,/data1/share001/share/access_12_245/S/X/SX466847-T-standard.bam,/data1/share001/share/access_12_245/O/F/OF486079-N-standard.bam,P-0109883-N01-XS2
+P-0100449-T03-XS1,/data1/share001/share/access_12_245/Z/A/ZA530230-T-standard.bam,/data1/share001/share/access_12_245/O/T/OT686910-N-standard.bam,P-0100449-N02-XS1

@@ -1,0 +1,2 @@
+sample_id,tumor_bam,normal_bam,matched_norm_sample_barcode
+C-X5031W-L001-d,/path/to/C-X5031W-L001-d.bam,/path/to/C-X5031W-N001-d.bam,C-X5031W-N001-d

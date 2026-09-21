@@ -1,0 +1,77 @@
+name: documentation
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/deploy-docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+
+      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        with:
+          key: mkdocs-material-${{ env.cache_id }}
+          path: .cache
+          restore-keys: |
+            mkdocs-material-
+
+      - name: Install dependencies
+        run: |
+          pip install mkdocs-material mkdocs-mermaid2-plugin \
+            mkdocs-glightbox mkdocs-git-revision-date-localized-plugin \
+            mkdocs-panzoom-plugin pillow cairosvg mike mkdocs-pdf
+
+      - name: Build documentation (PR check only)
+        if: github.event_name == 'pull_request'
+        run: mkdocs build --strict
+
+      - name: Configure Git Credentials
+        if: github.event_name == 'push'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Sync gh-pages
+        if: github.event_name == 'push'
+        run: |
+          git fetch origin gh-pages:gh-pages 2>/dev/null || true
+
+      # Deploy 'develop' branch as "dev" version
+      - name: Deploy development docs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        run: |
+          mike deploy --push --update-aliases dev develop
+
+      # Deploy 'main' branch as the stable version (e.g. "0.1.0")
+      # and set it as the default landing page
+      - name: Deploy stable docs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          mike deploy --push --update-aliases "$VERSION" stable
+          mike set-default --push stable
