@@ -82,12 +82,10 @@ workflow {
         .splitCsv(header: true, sep: ',', quote: '"')
         .map { row ->
             // Build meta map with sample ID and optional normal barcode
+            def norm_barcode = (row.containsKey('matched_norm_sample_barcode') && row.matched_norm_sample_barcode) ? row.matched_norm_sample_barcode : ''
             def meta = [
                 id: row.sample_id,
-                matched_norm_sample_barcode:
-                    row.containsKey('matched_norm_sample_barcode')
-                    && row.matched_norm_sample_barcode
-                    ? row.matched_norm_sample_barcode : ''
+                matched_norm_sample_barcode: norm_barcode
             ]
 
             def tumor_bam  = file(row.tumor_bam, checkIfExists: true)
