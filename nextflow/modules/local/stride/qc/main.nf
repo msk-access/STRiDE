@@ -48,10 +48,12 @@ process STRIDE_QC {
     echo "────────────────────────────────────────────────"
 
     stride qc \\
+        --model ${params.model} \\
         --feature-tsv ${features_tsv} \\
         ${pred_arg} \\
         --output '${prefix}_qc.html' \\
         ${explain_flag} \\
+        --shapiq-budget ${params.shapiq_budget} \\
         ${args}
 
 

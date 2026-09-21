@@ -149,36 +149,74 @@ def predict(
     from rich.console import Console
     from rich.table import Table
 
+    import glob
+    import os
+    from pathlib import Path
+    import pandas as pd
+
     from .models import get_predictor
-    from .predictor import (
-        gather_samples_from_inputs,
-        write_one_output_per_sample,
-    )
+    from .predictor import write_one_output_per_sample
 
     setup_logging(verbose=verbose)
     console = Console()
 
     # Delegate file gathering
-    try:
-        sample_ids, feature_bag = gather_samples_from_inputs(
-            samples_dir=features_dir,
-            sample_files=feature_files,
-            list_file=list_file,
-        )
-    except FileNotFoundError as err:
+    tsvs: list[str] = []
+    if features_dir:
+        tsvs.extend(glob.glob(os.path.join(features_dir, "**", "*.tsv"), recursive=True))
+    if feature_files:
+        tsvs.extend(feature_files)
+    if list_file:
+        with open(list_file) as f:
+            for ln in f:
+                p = ln.strip()
+                if p:
+                    tsvs.append(p)
+
+    seen = set()
+    tsvs_clean = []
+    for p in tsvs:
+        ap = os.path.abspath(p)
+        if ap not in seen and os.path.exists(ap):
+            seen.add(ap)
+            tsvs_clean.append(ap)
+
+    if not tsvs_clean:
         logger.error(
             "No feature TSV files found. Provide --features-dir, --feature-files, or --list-file."
         )
-        raise typer.Exit(code=1) from err
+        raise typer.Exit(code=1)
 
-    logger.info("Found %d sample(s) for prediction using model='%s'", len(sample_ids), model)
+    logger.info("Found %d sample(s) for prediction using model='%s'", len(tsvs_clean), model)
 
     # Initialize model predictor via factory
     predictor_inst = get_predictor(method=model, model_path=model_joblib)
 
     # Run batch evaluation
-    results_df = predictor_inst.predict_batch(feature_bag)
-    paths = write_one_output_per_sample(results_df, out_dir)
+    results_df = predictor_inst.predict_batch(tsvs_clean)
+
+    # Align with MAF output schema
+    sample_ids = []
+    for fp in tsvs_clean:
+        sid = os.path.splitext(os.path.basename(fp))[0]
+        if sid.startswith("msi_features_"):
+            sid = sid[len("msi_features_") :]
+        sample_ids.append(sid.strip())
+
+    norm_bc = matched_norm_sample_barcode or ""
+    score_col = "p_msi" if "p_msi" in results_df.columns else "score"
+    scores = results_df[score_col].fillna(0.0).round(6).tolist() if score_col in results_df.columns else [0.0] * len(sample_ids)
+    preds = results_df["prediction"].tolist() if "prediction" in results_df.columns else ["MSS"] * len(sample_ids)
+
+    df_preds = pd.DataFrame(
+        {
+            "Tumor_Sample_Barcode": sample_ids,
+            "Matched_Norm_Sample_Barcode": [norm_bc] * len(sample_ids),
+            "MSI_class_predicted": preds,
+            "msi_score": scores,
+        }
+    )
+    paths = write_one_output_per_sample(df_preds, out_dir)
 
     # Display a Rich summary table
     table = Table(title=f"MSI Predictions (Model: {model.upper()})")
@@ -186,12 +224,12 @@ def predict(
     table.add_column("Prediction", style="bold")
     table.add_column("Score", justify="right")
 
-    for _, row in results_df.iterrows():
-        pred_label = str(row.get("prediction", "MSS"))
-        score_val = row.get("score", 0.0)
+    for _, row in df_preds.iterrows():
+        pred_label = str(row.get("MSI_class_predicted", "MSS"))
+        score_val = row.get("msi_score", 0.0)
         style = "red bold" if pred_label == "MSI" else "green"
         table.add_row(
-            str(row.get("sample_id", "")),
+            str(row.get("Tumor_Sample_Barcode", "")),
             f"[{style}]{pred_label}[/{style}]",
             f"{score_val:.6f}",
         )
@@ -252,6 +290,14 @@ def run(
     generate_qc: bool = typer.Option(
         False, "--generate-qc", help="Generate an interactive QC report after prediction."
     ),
+    explain: bool = typer.Option(
+        True,
+        "--explain/--no-explain",
+        help="Compute ShapIQ site attributions and embed Waterfall chart in QC report.",
+    ),
+    shapiq_budget: int = typer.Option(
+        128, "--shapiq-budget", help="Evaluation budget for Shapley value sampling."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """End-to-end MSI pipeline: BAMs → features → prediction."""
@@ -280,6 +326,8 @@ def run(
             max_repeat_bins=max_repeat_bins,
             keep_features=not delete_features,
             generate_qc=generate_qc,
+            explain=explain,
+            shapiq_budget=shapiq_budget,
         )
 
         # Summary table
@@ -318,6 +366,8 @@ def run(
         max_repeat_bins=max_repeat_bins,
         keep_features=not delete_features,
         generate_qc=generate_qc,
+        explain=explain,
+        shapiq_budget=shapiq_budget,
     )
     logger.info("Sample: %s", res["sample_id"])
     logger.info("Prediction: %s", res["prediction_txt"])

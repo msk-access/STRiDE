@@ -104,7 +104,8 @@ results/
 │   ├── predictions/
 │   │   └── PATIENT_001_msi.txt
 │   └── qc/
-│       └── PATIENT_001_qc.html
+│       ├── PATIENT_001_qc.html
+│       └── PATIENT_001_drivers.tsv
 └── pipeline_info/
     ├── execution_trace.txt
     ├── execution_report.html

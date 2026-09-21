@@ -74,6 +74,8 @@ def run_end_to_end_single(
     max_repeat_bins: int = 100,
     keep_features: bool = True,
     generate_qc: bool = False,
+    explain: bool = True,
+    shapiq_budget: int = 128,
 ) -> dict[str, str]:
     """Run the full pipeline for a single sample.
 
@@ -148,12 +150,12 @@ def run_end_to_end_single(
 
             # Optional Explainability Attribution
             att_info = None
-            if model_method.lower().startswith("tabpfn"):
+            if explain and model_method.lower().startswith("tabpfn"):
                 try:
                     predictor_inst = get_predictor(method=model_method, model_path=model_joblib)
                     if hasattr(predictor_inst, "explain_sample"):
-                        logger.info("Computing ShapIQ locus attributions for %s...", sid)
-                        att_info = predictor_inst.explain_sample(feat_tsv)
+                        logger.info("Computing ShapIQ locus attributions for %s (budget=%d)...", sid, shapiq_budget)
+                        att_info = predictor_inst.explain_sample(feat_tsv, budget=shapiq_budget)
                         driver_tsv = os.path.join(qc_dir, f"{safe_name(sid)}_drivers.tsv")
                         from stride.core.explainability import export_driver_tsv
                         export_driver_tsv(att_info["site_attributions"], driver_tsv)
@@ -193,6 +195,8 @@ def run_end_to_end_batch(
     max_repeat_bins: int = 100,
     keep_features: bool = True,
     generate_qc: bool = False,
+    explain: bool = True,
+    shapiq_budget: int = 128,
 ) -> list[dict[str, str]]:
     """Run the full pipeline for every sample in a manifest file.
 
@@ -260,7 +264,7 @@ def run_end_to_end_batch(
             logger.info("Generating QC reports for %d samples", len(sample_ids))
             
             predictor_inst = None
-            if model_method.lower().startswith("tabpfn"):
+            if explain and model_method.lower().startswith("tabpfn"):
                 try:
                     predictor_inst = get_predictor(method=model_method, model_path=model_joblib)
                 except Exception:
@@ -278,9 +282,9 @@ def run_end_to_end_batch(
                     }
 
                 att_info = None
-                if predictor_inst is not None and hasattr(predictor_inst, "explain_sample"):
+                if explain and predictor_inst is not None and hasattr(predictor_inst, "explain_sample"):
                     try:
-                        att_info = predictor_inst.explain_sample(feat)
+                        att_info = predictor_inst.explain_sample(feat, budget=shapiq_budget)
                         driver_tsv = os.path.join(qc_dir, f"{safe_name(sid)}_drivers.tsv")
                         from stride.core.explainability import export_driver_tsv
                         export_driver_tsv(att_info["site_attributions"], driver_tsv)
