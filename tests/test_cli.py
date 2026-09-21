@@ -80,6 +80,8 @@ class TestRunCommand:
         assert "--samples-list" in out
         assert "--model-joblib" in out
         assert "--delete-features" in out
+        assert "--explain" in out
+        assert "--shapiq-budget" in out
         assert "Matched normal sample" in out
 
     def test_requires_out_dir(self):

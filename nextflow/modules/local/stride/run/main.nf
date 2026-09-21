@@ -90,6 +90,7 @@ process STRIDE_RUN {
         ${norm_bc} \\
         ${qc_flag} \\
         ${explain_flag} \\
+        --shapiq-budget ${params.shapiq_budget} \\
         ${args}
 
 

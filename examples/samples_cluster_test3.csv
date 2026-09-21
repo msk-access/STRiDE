@@ -1,0 +1,4 @@
+sample_id,tumor_bam,normal_bam,matched_norm_sample_barcode
+P-0109895-T03-XS2,/data1/share001/share/access_12_245/H/F/HF813332-T-standard.bam,/data1/share001/share/access_12_245/U/Q/UQ482605-N-standard.bam,P-0109895-N03-XS2
+P-0080677-T01-XS1,/data1/share001/share/access_12_245/J/C/JC602501-T-standard.bam,/data1/share001/share/access_12_245/F/B/FB317582-N-standard.bam,P-0080677-N01-XS1
+P-0061710-T03-XS1,/data1/share001/share/access_12_245/G/J/GJ692774-T-standard.bam,/data1/share001/share/access_12_245/L/U/LU193926-N-standard.bam,P-0061710-N02-XS1
