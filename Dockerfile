@@ -30,9 +30,9 @@ LABEL org.opencontainers.image.version="${VERSION}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps bash && rm -rf /var/lib/apt/lists/*
 
-# Install STRiDE with QC extras (plotly for interactive HTML reports)
+# Install STRiDE with all extras (QC reports + TabPFN + PyTorch)
 COPY . /build
-RUN pip install --no-cache-dir "/build[qc]" && rm -rf /build
+RUN pip install --no-cache-dir "/build[all]" && rm -rf /build
 
 # Verify installation
 RUN stride --version
