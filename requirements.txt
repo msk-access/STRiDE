@@ -10,11 +10,10 @@ rich>=13.0.0
 tqdm>=4.65.0
 matplotlib>=3.7.0
 
-# Optional TabPFN dependencies
+# Optional TabPFN & Explainability dependencies
 torch>=2.0.0
-tabpfn>=6.3.0
-tabpfn-common-utils
-tabpfn-extensions
+tabpfn==8.4.0
+shapiq>=1.4.0
 
 # Optional QC dependencies
 plotly>=5.15.0

@@ -68,9 +68,8 @@ qc = [
 
 tabpfn = [
     "torch>=2.0.0",
-    "tabpfn>=6.3.0",
-    "tabpfn-common-utils",
-    "tabpfn-extensions",
+    "tabpfn==8.4.0",
+    "shapiq>=1.4.0",
 ]
 
 all = [
@@ -96,7 +95,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "stride.models" = ["*.joblib", "*.txt", "*.json"]
-"stride.models.tabpfn" = ["*.joblib", "*.txt", "**/*.joblib", "**/*.txt"]
+"stride.models.tabpfn" = ["*.joblib", "*.txt", "*.tsv", "**/*.joblib", "**/*.txt", "**/*.tsv"]
 "stride.models.svm" = ["*.joblib", "*.txt", "*.json"]
 "stride.data" = ["*.txt", "*.tsv"]
 
@@ -112,10 +111,6 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=stride",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
 ]
 
 [tool.coverage.run]

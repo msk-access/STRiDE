@@ -40,3 +40,16 @@ site/
 
 # Logs
 *.log
+
+# Nextflow and test results
+results*/
+work/
+.nextflow/
+.nextflow.log*
+
+# Pip environment exports
+env_packages.txt
+
+# macOS metadata
+._*
+**/.DS_Store

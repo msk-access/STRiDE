@@ -1,0 +1,8 @@
+model_id	cohort	rank	combo_name	threshold	features	artifact_relpath	description
+ao_top1	access_only	1	SPECIAL_k2__ed__te	0.6975	entropy_diff,tumor_entropy	artifacts/access_only/SPECIAL_k2__ed__te_0.6975.joblib	Access-Only Rank 1 (ED + TE)
+ao_top2	access_only	2	SPECIAL_k3__te__ne__nadn6	0.5178	tumor_entropy,normal_entropy,n_alleles_diff_norm_6	artifacts/access_only/SPECIAL_k3__te__ne__nadn6_0.5178.joblib	Access-Only Rank 2 (TE + NE + NADN6)
+ao_top3	access_only	3	SPECIAL_k3__wd__te__ne	0.7213	wasserstein_distance,tumor_entropy,normal_entropy	artifacts/access_only/SPECIAL_k3__wd__te__ne_0.7213.joblib	Access-Only Rank 3 (WD + TE + NE)
+ao_top4	access_only	4	SPECIAL_k2__wd__te	0.7213	wasserstein_distance,tumor_entropy	artifacts/access_only/SPECIAL_k2__wd__te_0.7213.joblib	Access-Only Rank 4 (WD + TE)
+ai_top1	access_impact	1	SPECIAL_k3__wd__te__ne	0.6853	wasserstein_distance,tumor_entropy,normal_entropy	artifacts/access_impact/SPECIAL_k3__wd__te__ne_0.6853.joblib	Access+Impact Rank 1 (WD + TE + NE)
+ai_top2	access_impact	2	SPECIAL_k4__wd__te__nadn4__nadn6	0.7319	wasserstein_distance,tumor_entropy,n_alleles_diff_norm_4,n_alleles_diff_norm_6	artifacts/access_impact/SPECIAL_k4__wd__te__nadn4__nadn6_0.7319.joblib	Access+Impact Rank 2 (WD + TE + NADN4 + NADN6)
+ai_top3	access_impact	3	SPECIAL_k3__wd__ed__te	0.7458	wasserstein_distance,entropy_diff,tumor_entropy	artifacts/access_impact/SPECIAL_k3__wd__ed__te_0.7458.joblib	Access+Impact Rank 3 (WD + ED + TE)

@@ -76,6 +76,8 @@ def run_end_to_end_single(
     generate_qc: bool = False,
     explain: bool = True,
     shapiq_budget: int = 128,
+    tabpfn_model: Optional[str] = None,
+    threshold: Optional[float] = None,
 ) -> dict[str, str]:
     """Run the full pipeline for a single sample.
 
@@ -113,10 +115,16 @@ def run_end_to_end_single(
     )
 
     if model_method.lower().startswith("tabpfn"):
-        predictor = get_predictor(method=model_method, model_path=model_joblib)
+        predictor = get_predictor(
+            method=model_method,
+            model_path=model_joblib,
+            tabpfn_model=tabpfn_model,
+            threshold=threshold,
+        )
         res_df = predictor.predict_batch([feat_tsv])
         pred_label = res_df.iloc[0].get("prediction", "MSS") if not res_df.empty else "MSS"
         p_score = res_df.iloc[0].get("p_msi", 0.0) if not res_df.empty else 0.0
+        calibrated_threshold = float(getattr(predictor, "threshold", threshold or 0.50))
         df_preds = pd.DataFrame(
             [
                 {
@@ -124,11 +132,22 @@ def run_end_to_end_single(
                     "Matched_Norm_Sample_Barcode": normal_bc,
                     "MSI_class_predicted": pred_label,
                     "msi_score": round(float(p_score), 6),
+                    "threshold": calibrated_threshold,
                 }
             ]
         )
     else:
         df_preds = predict_from_feature_tsvs(model_joblib, [feat_tsv], normal_barcodes=[normal_bc])
+        calibrated_threshold = float(threshold) if threshold is not None else 0.50
+        if model_joblib and threshold is None:
+            try:
+                from .models.tabpfn.registry import parse_threshold_from_filename
+                th_cand = parse_threshold_from_filename(model_joblib)
+                if th_cand is not None:
+                    calibrated_threshold = float(th_cand)
+            except Exception:
+                pass
+        df_preds["threshold"] = calibrated_threshold
 
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
@@ -140,7 +159,7 @@ def run_end_to_end_single(
         else:
             qc_dir = os.path.join(out_dir, "qc")
             os.makedirs(qc_dir, exist_ok=True)
-            qc_path = os.path.join(qc_dir, f"{safe_name(sid)}_qc.html")
+            qc_path = os.path.join(qc_dir, f"{safe_name(sid)}_interpretation_reports.html")
 
             # Extract basic prediction info
             pred_info = None
@@ -148,13 +167,19 @@ def run_end_to_end_single(
                 pred_info = {
                     "msi_status": df_preds.iloc[0]["MSI_class_predicted"],
                     "msi_score": df_preds.iloc[0]["msi_score"],
+                    "threshold": calibrated_threshold,
                 }
 
             # Optional Explainability Attribution
             att_info = None
             if explain and model_method.lower().startswith("tabpfn"):
                 try:
-                    predictor_inst = get_predictor(method=model_method, model_path=model_joblib)
+                    predictor_inst = get_predictor(
+                        method=model_method,
+                        model_path=model_joblib,
+                        tabpfn_model=tabpfn_model,
+                        threshold=calibrated_threshold,
+                    )
                     if hasattr(predictor_inst, "explain_sample"):
                         logger.info(
                             "Computing ShapIQ locus attributions for %s (budget=%d)...",
@@ -169,9 +194,13 @@ def run_end_to_end_single(
                 except Exception as ex:
                     logger.warning("Explainability calculation skipped for %s: %s", sid, ex)
 
-            logger.info("Generating QC report: %s", qc_path)
+            logger.info("Generating interpretation report: %s", qc_path)
             generate_report(
-                feat_tsv, qc_path, prediction_result=pred_info, attribution_result=att_info
+                feat_tsv,
+                qc_path,
+                prediction_result=pred_info,
+                attribution_result=att_info,
+                threshold=calibrated_threshold,
             )
 
     if not keep_features:
@@ -186,6 +215,7 @@ def run_end_to_end_single(
         "features_tsv": feat_tsv,
         "prediction_txt": out_paths[0],
         "qc_report": qc_path,
+        "interpretation_report": qc_path,
     }
 
 
@@ -206,6 +236,8 @@ def run_end_to_end_batch(
     generate_qc: bool = False,
     explain: bool = True,
     shapiq_budget: int = 128,
+    tabpfn_model: Optional[str] = None,
+    threshold: Optional[float] = None,
 ) -> list[dict[str, str]]:
     """Run the full pipeline for every sample in a manifest file.
 
@@ -247,9 +279,16 @@ def run_end_to_end_batch(
     logger.info(
         "Running batch prediction for %d samples (model: %s)", len(sample_ids), model_method
     )
+    calibrated_threshold = float(threshold) if threshold is not None else 0.50
     if model_method.lower().startswith("tabpfn"):
-        predictor = get_predictor(method=model_method, model_path=model_joblib)
+        predictor = get_predictor(
+            method=model_method,
+            model_path=model_joblib,
+            tabpfn_model=tabpfn_model,
+            threshold=threshold,
+        )
         res_df = predictor.predict_batch(feature_tsvs)
+        calibrated_threshold = float(getattr(predictor, "threshold", threshold or 0.50))
         df_preds = pd.DataFrame(
             {
                 "Tumor_Sample_Barcode": sample_ids,
@@ -260,12 +299,24 @@ def run_end_to_end_batch(
                 "msi_score": res_df["p_msi"].round(6).tolist()
                 if "p_msi" in res_df
                 else [0.0] * len(sample_ids),
+                "threshold": res_df["threshold"].tolist()
+                if "threshold" in res_df
+                else [calibrated_threshold] * len(sample_ids),
             }
         )
     else:
         df_preds = predict_from_feature_tsvs(
             model_joblib, feature_tsvs, normal_barcodes=normal_barcodes
         )
+        if model_joblib and threshold is None:
+            try:
+                from .models.tabpfn.registry import parse_threshold_from_filename
+                th_cand = parse_threshold_from_filename(model_joblib)
+                if th_cand is not None:
+                    calibrated_threshold = float(th_cand)
+            except Exception:
+                pass
+        df_preds["threshold"] = calibrated_threshold
     out_paths = write_one_output_per_sample(df_preds, preds_dir)
 
     # 3) Optional QC Generation
@@ -281,19 +332,31 @@ def run_end_to_end_batch(
             predictor_inst = None
             if explain and model_method.lower().startswith("tabpfn"):
                 try:
-                    predictor_inst = get_predictor(method=model_method, model_path=model_joblib)
+                    predictor_inst = get_predictor(
+                        method=model_method,
+                        model_path=model_joblib,
+                        tabpfn_model=tabpfn_model,
+                        threshold=calibrated_threshold,
+                    )
                 except Exception:
                     predictor_inst = None
 
             for idx, (sid, feat) in enumerate(zip(sample_ids, feature_tsvs)):
-                qc_path = os.path.join(qc_dir, f"{safe_name(sid)}_qc.html")
+                qc_path = os.path.join(qc_dir, f"{safe_name(sid)}_interpretation_reports.html")
 
                 pred_info = None
+                sample_thr = calibrated_threshold
                 row_match = df_preds[df_preds["Tumor_Sample_Barcode"] == sid]
                 if not row_match.empty:
+                    if "threshold" in row_match.iloc[0] and pd.notna(row_match.iloc[0]["threshold"]):
+                        try:
+                            sample_thr = float(row_match.iloc[0]["threshold"])
+                        except (ValueError, TypeError):
+                            pass
                     pred_info = {
                         "msi_status": row_match.iloc[0]["MSI_class_predicted"],
                         "msi_score": row_match.iloc[0]["msi_score"],
+                        "threshold": sample_thr,
                     }
 
                 att_info = None
@@ -312,7 +375,11 @@ def run_end_to_end_batch(
                         logger.warning("Explainability skipped for %s: %s", sid, ex)
 
                 generate_report(
-                    feat, qc_path, prediction_result=pred_info, attribution_result=att_info
+                    feat,
+                    qc_path,
+                    prediction_result=pred_info,
+                    attribution_result=att_info,
+                    threshold=sample_thr,
                 )
                 qc_paths[idx] = qc_path
 
@@ -335,6 +402,7 @@ def run_end_to_end_batch(
                 "features_tsv": feature_tsvs[i],
                 "prediction_txt": pred_map.get(safe_name(sid), ""),
                 "qc_report": qc_paths[i],
+                "interpretation_report": qc_paths[i],
             }
         )
 

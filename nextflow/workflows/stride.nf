@@ -31,7 +31,7 @@ workflow STRIDE {
     emit:
     features    = STRIDE_RUN.out.features     // [ val(meta), path(*.tsv) ]
     predictions = STRIDE_RUN.out.predictions  // [ val(meta), path(*_msi.txt) ]
-    qc_reports  = STRIDE_RUN.out.qc_reports   // [ val(meta), path(*_qc.html) ]
+    qc_reports  = STRIDE_RUN.out.qc_reports   // [ val(meta), path(*_interpretation_reports.html) ]
     drivers     = STRIDE_RUN.out.drivers      // [ val(meta), path(*_drivers.tsv) ]
     versions    = ch_versions                 // path(versions.yml)
 }

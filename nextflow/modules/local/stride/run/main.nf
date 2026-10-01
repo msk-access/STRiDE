@@ -35,7 +35,7 @@ process STRIDE_RUN {
     output:
     tuple val(meta), path("features/*.tsv"),        emit: features
     tuple val(meta), path("predictions/*_msi.txt"), emit: predictions
-    tuple val(meta), path("qc/*_qc.html"),          emit: qc_reports, optional: true
+    tuple val(meta), path("qc/*_interpretation_reports.html"), emit: qc_reports, optional: true
     tuple val(meta), path("qc/*_drivers.tsv"),      emit: drivers,    optional: true
     path "versions.yml",                            emit: versions
 
@@ -60,8 +60,10 @@ process STRIDE_RUN {
     def explain_flag = params.explain ? '--explain' : '--no-explain'
 
     // Site list and model: pass only if real files (not NO_FILE sentinel)
-    def site_arg  = site_list.name  != 'NO_FILE' ? "--site-list ${site_list}"    : ''
-    def model_arg = model_joblib.name != 'NO_FILE' ? "--model-joblib ${model_joblib}" : ''
+    def site_arg   = site_list.name  != 'NO_FILE' ? "--site-list ${site_list}"    : ''
+    def model_arg  = model_joblib.name != 'NO_FILE' ? "--model-joblib ${model_joblib}" : ''
+    def tabpfn_arg = (params.model.toString().toLowerCase().contains('tabpfn') && params.tabpfn_model) ? "--tabpfn-model '${params.tabpfn_model}'" : ''
+    def thresh_arg = params.threshold ? "--threshold ${params.threshold}" : ''
 
     """
     # Log inputs for debugging / Nextflow trace
@@ -79,6 +81,8 @@ process STRIDE_RUN {
 
     stride run \\
         --model      ${params.model} \\
+        ${tabpfn_arg} \\
+        ${thresh_arg} \\
         --tumor-bam  ${tumor_bam} \\
         --normal-bam ${normal_bam} \\
         --out-dir    . \\

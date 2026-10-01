@@ -53,13 +53,20 @@ except ImportError:
     torch.device = MockDevice
     torch.__path__ = []
     torch.storage = types.ModuleType("torch.storage")
+    torch.storage.__path__ = []
     torch.storage._load_from_bytes = lambda b: None
     torch.storage._typed_storage_reconstructor = lambda *args: None
     torch.storage._untyped_storage_reconstructor = lambda *args: None
+    torch._utils = types.ModuleType("torch._utils")
+    torch._utils.__path__ = []
+    torch._utils._rebuild_tensor_v2 = lambda *args, **kwargs: MockTensor()
+    torch._utils._rebuild_parameter = lambda *args, **kwargs: MockTensor()
+    torch._utils._rebuild_tensor = lambda *args, **kwargs: MockTensor()
     torch.cuda = types.SimpleNamespace(is_available=lambda: False, is_initialized=lambda: False)
 
     sys.modules["torch"] = torch
     sys.modules["torch.storage"] = torch.storage
+    sys.modules["torch._utils"] = torch._utils
     sys.modules["torch.cuda"] = torch.cuda
 
 
@@ -85,7 +92,10 @@ class GenericPickleObject:
 
 
 class _AutoTabPFNModule(types.ModuleType):
-    """Dynamically resolves any submodules or classes requested by pickle."""
+    """Dynamically resolves any submodules or classes requested by pickle.
+
+    Used when tabpfn is NOT installed at all.
+    """
 
     def __init__(self, name):
         super().__init__(name)
@@ -96,16 +106,40 @@ class _AutoTabPFNModule(types.ModuleType):
     def __getattr__(self, name):
         if name.startswith("__") and name.endswith("__"):
             raise AttributeError(name)
-        sub_mod = _AutoTabPFNModule(f"{self.__name__}.{name}")
-        setattr(self, name, sub_mod)
-        sys.modules[f"{self.__name__}.{name}"] = sub_mod
-        return GenericPickleObject
+        cls = type(name, (GenericPickleObject,), {"__module__": self.__name__})
+        setattr(self, name, cls)
+        return cls
+
+
+class _ForgivingModule(types.ModuleType):
+    """Wraps a real installed module so that any missing attribute is auto-created
+    as a GenericPickleObject subclass rather than raising AttributeError.
+
+    This handles the case where tabpfn IS installed but is an older version that
+    is missing classes the pickled model references.
+    """
+
+    def __init__(self, real_module):
+        # Copy the real module's namespace into this wrapper
+        super().__init__(real_module.__name__)
+        self.__dict__.update(real_module.__dict__)
+        # Keep a ref to the original so we can delegate attribute lookup
+        object.__setattr__(self, "_real_module", real_module)
+
+    def __getattr__(self, name):
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        # Auto-create the missing class as a GenericPickleObject subclass
+        cls = type(name, (GenericPickleObject,), {"__module__": self.__name__})
+        setattr(self, name, cls)
+        return cls
 
 
 class _TabPFNLoader:
     @staticmethod
     def create_module(spec):
         mod = _AutoTabPFNModule(spec.name)
+        mod.__path__ = []
         return mod
 
     @staticmethod
@@ -121,8 +155,24 @@ class _TabPFNMetaFinder:
         if (
             fullname.startswith("tabpfn.")
             or fullname == "tabpfn"
-            or (fullname.startswith("torch.") and torch.__class__.__name__ == "MockTorch")
+            or (
+                fullname.startswith("torch.")
+                and getattr(torch, "__class__", None).__name__ == "MockTorch"
+            )
         ):
+            for finder in sys.meta_path:
+                if finder is cls or not hasattr(finder, "find_spec"):
+                    continue
+                try:
+                    spec = finder.find_spec(fullname, path, target)
+                    if (
+                        spec is not None
+                        and spec.loader is not None
+                        and getattr(spec.loader, "__name__", "") != "_TabPFNLoader"
+                    ):
+                        return spec
+                except Exception:
+                    pass
             spec = importlib.machinery.ModuleSpec(fullname, _TabPFNLoader, is_package=True)
             return spec
         return None
@@ -130,14 +180,89 @@ class _TabPFNMetaFinder:
 
 def setup_tabpfn_shims():
     """
-    Shims tabpfn and all tabpfn.* submodules using a meta path finder
-    to allow clean unpickling across varying environments.
+    Shims tabpfn and all tabpfn.* submodules to allow clean unpickling across
+    varying environments.
+
+    Handles two cases:
+      1. tabpfn is NOT installed: uses _AutoTabPFNModule pure-mock modules.
+      2. tabpfn IS installed but is an older version: wraps real modules with
+         _ForgivingModule so that missing attributes (classes) are auto-created
+         as GenericPickleObject stubs instead of raising AttributeError.
     """
     if not any(isinstance(f, type) and f.__name__ == "_TabPFNMetaFinder" for f in sys.meta_path):
-        sys.meta_path.insert(0, _TabPFNMetaFinder)
+        sys.meta_path.append(_TabPFNMetaFinder)
 
-    if "tabpfn" not in sys.modules:
-        sys.modules["tabpfn"] = _AutoTabPFNModule("tabpfn")
+    tabpfn_installed = False
+    try:
+        import tabpfn  # noqa: F401
+        tabpfn_installed = True
+    except ImportError:
+        if "tabpfn" not in sys.modules:
+            sys.modules["tabpfn"] = _AutoTabPFNModule("tabpfn")
+
+    if tabpfn_installed:
+        # Wrap all already-loaded tabpfn.* modules so missing attributes
+        # fall back to GenericPickleObject stubs.
+        _wrap_installed_tabpfn_modules()
+
+    # Pre-register / wrap key submodule paths that the joblib/pickle file
+    # references.  _ensure_tabpfn_submodule is a no-op when the module is
+    # already wrapped, so calling it is always safe.
+    for submod in [
+        "tabpfn.finetuning",
+        "tabpfn.finetuning.finetuned_classifier",
+        "tabpfn.preprocessing",
+        "tabpfn.preprocessing.ensemble",
+        "tabpfn.classifier",
+        "tabpfn.base",
+        "tabpfn.model",
+        "tabpfn.architectures",
+        "tabpfn.architectures.base",
+    ]:
+        _ensure_tabpfn_submodule(submod, use_forgiving=tabpfn_installed)
+
+
+def _wrap_installed_tabpfn_modules() -> None:
+    """Replace every tabpfn.* entry in sys.modules with a _ForgivingModule
+    wrapper so that attribute lookups for missing classes don't raise."""
+    to_wrap = [
+        (k, v)
+        for k, v in list(sys.modules.items())
+        if (k == "tabpfn" or k.startswith("tabpfn."))
+        and isinstance(v, types.ModuleType)
+        and not isinstance(v, (_ForgivingModule, _AutoTabPFNModule))
+    ]
+    for name, mod in to_wrap:
+        sys.modules[name] = _ForgivingModule(mod)
+
+
+def _ensure_tabpfn_submodule(fullname: str, *, use_forgiving: bool = False) -> None:
+    """Register *fullname* in sys.modules if not already present (or already wrapped).
+
+    When *use_forgiving* is True and the module exists as a plain real module,
+    replace it with a _ForgivingModule wrapper.
+    """
+    existing = sys.modules.get(fullname)
+    if existing is None:
+        # Not imported yet: try a real import first, wrap if installed.
+        try:
+            import importlib
+            real = importlib.import_module(fullname)
+            if use_forgiving and not isinstance(real, (_ForgivingModule, _AutoTabPFNModule)):
+                sys.modules[fullname] = _ForgivingModule(real)
+        except ImportError:
+            mod = _AutoTabPFNModule(fullname)
+            parent_name, _, child_name = fullname.rpartition(".")
+            if parent_name and parent_name in sys.modules:
+                parent = sys.modules[parent_name]
+                if not hasattr(parent, child_name):
+                    setattr(parent, child_name, mod)
+            sys.modules[fullname] = mod
+    elif use_forgiving and isinstance(existing, types.ModuleType) and not isinstance(
+        existing, (_ForgivingModule, _AutoTabPFNModule)
+    ):
+        # Already imported as a real module: wrap it.
+        sys.modules[fullname] = _ForgivingModule(existing)
 
 
 def apply_cpu_patches():

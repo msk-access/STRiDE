@@ -38,7 +38,9 @@ process STRIDE_PREDICT {
         : ''
 
     // Model: pass only if real file
-    def model_arg = model_joblib.name != 'NO_FILE' ? "--model-joblib ${model_joblib}" : ''
+    def model_arg  = model_joblib.name != 'NO_FILE' ? "--model-joblib ${model_joblib}" : ''
+    def tabpfn_arg = (params.model.toString().toLowerCase().contains('tabpfn') && params.tabpfn_model) ? "--tabpfn-model '${params.tabpfn_model}'" : ''
+    def thresh_arg = params.threshold ? "--threshold ${params.threshold}" : ''
 
     """
     echo "── STRIDE_PREDICT ──────────────────────────────"
@@ -49,6 +51,8 @@ process STRIDE_PREDICT {
 
     stride predict \\
         --model ${params.model} \\
+        ${tabpfn_arg} \\
+        ${thresh_arg} \\
         --feature-files ${features_tsv} \\
         --out-dir . \\
         ${model_arg} \\
