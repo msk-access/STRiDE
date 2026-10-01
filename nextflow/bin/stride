@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -e
+
+# Find STRiDE root directory relative to this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STRIDE_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Ensure Python path includes STRiDE's src directory
+if [ -d "${STRIDE_ROOT}/src" ]; then
+    export PYTHONPATH="${STRIDE_ROOT}/src:${PYTHONPATH:-}"
+fi
+
+# Run via python3 module or binary
+exec python3 -m stride.cli "$@"

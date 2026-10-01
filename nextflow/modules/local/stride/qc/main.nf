@@ -20,7 +20,7 @@ process STRIDE_QC {
     tuple val(meta), path(features_tsv), path(prediction_txt)
 
     output:
-    tuple val(meta), path("*_qc.html"),    emit: qc_reports
+    tuple val(meta), path("*_interpretation_reports.html"), emit: qc_reports
     tuple val(meta), path("*_drivers.tsv"), emit: drivers, optional: true
     path "versions.yml",                   emit: versions
 
@@ -39,6 +39,10 @@ process STRIDE_QC {
     // Explainability flag
     def explain_flag = params.explain ? '--explain' : '--no-explain'
 
+    def tabpfn_arg = (params.model.toString().toLowerCase().contains('tabpfn') && params.tabpfn_model) ? "--tabpfn-model '${params.tabpfn_model}'" : ''
+    def thresh_arg = params.threshold ? "--threshold ${params.threshold}" : ''
+    def model_arg  = (params.model_joblib && params.model_joblib.toString() != 'NO_FILE') ? "--model-joblib ${params.model_joblib}" : ''
+
     """
     echo "── STRIDE_QC ────────────────────────────────────"
     echo "Sample:     ${prefix}"
@@ -49,9 +53,12 @@ process STRIDE_QC {
 
     stride qc \\
         --model ${params.model} \\
+        ${tabpfn_arg} \\
+        ${thresh_arg} \\
+        ${model_arg} \\
         --feature-tsv ${features_tsv} \\
         ${pred_arg} \\
-        --output '${prefix}_qc.html' \\
+        --output '${prefix}_interpretation_reports.html' \\
         ${explain_flag} \\
         --shapiq-budget ${params.shapiq_budget} \\
         ${args}

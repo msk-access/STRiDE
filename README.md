@@ -1,95 +1,147 @@
 # STRiDE
 
-**Microsatellite Instability prediction for MSK-ACCESS cfDNA sequencing.**
+Microsatellite Instability (MSI) prediction pipeline for MSK-ACCESS cfDNA sequencing.
 
-STRiDE extracts repeat-frequency features from paired tumor/normal BAMs at 170 curated microsatellite loci and classifies samples as **MSI** or **MSS** using trained machine learning models (**SVM** and **TabPFN**).
-
----
-
-## Features
-
-- **Multi-Model Support**: Predict and train using **SVM** or **TabPFN** classifiers (`--model svm` or `--model tabpfn`).
-- **Feature Extraction**: Extract loci repeat frequency features and distance metrics (Wasserstein distance, L1, L2, JS divergence, entropy difference) directly from paired BAM files.
-- **Interactive HTML QC Dashboards**: Generate self-contained, interactive HTML quality-control reports with Plotly and Tabulator.js data tables.
-- **Typer CLI**: Simple, explicit command-line interface with sub-commands for every step of the workflow.
+STRiDE extracts repeat-frequency features from paired tumor/normal BAMs across 170 curated microsatellite loci, computes locus interaction values using ShapIQ, and classifies samples as **MSI** or **MSS** using fine-tuned machine learning models (**TabPFN** and **SVM**).
 
 ---
 
-## Quick Installation
+## Installation
 
-Within your Python / Conda environment:
+### Prerequisites
+- Python 3.10
+- Conda / Micromamba
 
+### Setup
 ```bash
+# Clone the repository
 git clone https://github.com/msk-access/STRiDE.git
 cd STRiDE
+
+# Create and activate environment
+micromamba create -n stride python=3.10 -y
+micromamba activate stride
+
+# Install STRiDE with all dependencies (TabPFN, PyTorch, ShapIQ, QC reporting)
 pip install -e '.[all]'
-```
 
-*Optional extras:*
-- `pip install -e '.[qc]'` — Install interactive HTML report generator dependencies.
-- `pip install -e '.[tabpfn]'` — Install PyTorch & TabPFN dependencies.
-- `pip install -e '.[all]'` — Install all core, QC, and TabPFN dependencies.
-
----
-
-## CLI Usage Overview
-
-Verify the installation:
-```bash
+# Verify CLI
 stride --help
 ```
 
-### 1. Extract Features from BAMs (`stride features`)
-```bash
-stride features \
-    --tumor-bam sample_tumor.bam \
-    --normal-bam sample_normal.bam \
-    --out-dir output/
+---
+
+## Nextflow Pipeline
+
+For multi-sample runs or cluster execution, use the Nextflow workflow (`nextflow/main.nf`).
+
+### 1. Prepare Sample Sheet (`samples.csv`)
+Create a CSV file with sample IDs and paths to paired tumor/normal BAM files:
+
+```csv
+sample,tumor_bam,normal_bam
+P-0080677-T01-XS1,/path/to/P-0080677-T01-XS1-T.bam,/path/to/P-0080677-T01-XS1-N.bam
+P-0061710-T03-XS1,/path/to/P-0061710-T03-XS1-T.bam,/path/to/P-0061710-T03-XS1-N.bam
 ```
 
-### 2. Predict MSI Status (`stride predict`)
-Predict using the default or fine-tuned model (**SVM** or **TabPFN**):
+### 2. Run Locally
 ```bash
-# Predict using SVM model
-stride predict --model svm --features-dir output/features/ --out-dir output/predictions/
-
-# Predict using TabPFN model
-stride predict --model tabpfn --features-dir output/features/ --out-dir output/predictions/
+nextflow run nextflow/main.nf \
+    --input samples.csv \
+    --outdir results/ \
+    --model tabpfn \
+    --tabpfn_model ao_top1
 ```
 
-### 3. Train a New Model (`stride train`)
-Train an SVM or TabPFN model on cohort TSV features:
+### 3. Run on Slurm Cluster
 ```bash
-stride train \
-    --method svm \
-    --access-msi-dir /path/to/access_msi \
-    --access-mss-dir /path/to/access_mss \
-    --out-dir trained_svm/
+nextflow run nextflow/main.nf \
+    -profile slurm \
+    --input samples.csv \
+    --outdir results/ \
+    --model tabpfn \
+    --tabpfn_model ao_top1 \
+    -resume
 ```
 
-### 4. Generate Interactive HTML QC Report (`stride qc`)
-Create an interactive HTML QC report for clinical review:
-```bash
-stride qc \
-    --feature-tsv output/features/msi_features_sample.tsv \
-    --prediction output/predictions/sample_prediction.txt \
-    --output sample_qc_report.html
-```
+### Pipeline Parameters
+| Parameter | Default | Description |
+|:---|:---|:---|
+| `--input` | *Required* | Path to sample sheet CSV (`sample,tumor_bam,normal_bam`) |
+| `--outdir` | `results` | Output directory |
+| `--model` | `tabpfn` | Model architecture: `tabpfn` or `svm` |
+| `--tabpfn_model` | `ao_top1` | Pre-trained model preset (e.g. `ao_top1`, `ai_top1`) |
+| `--threshold` | `auto` | Decision threshold (`auto` resolves calibrated threshold from manifest) |
+| `--qc` | `true` | Generate interactive HTML interpretation dashboards |
+| `--explain` | `true` | Compute ShapIQ locus attribution and driver loci |
 
-### 5. End-to-End Run (`stride run`)
-Run feature extraction, prediction, and optional interactive QC in a single command:
+---
+
+## CLI Usage
+
+### End-to-End Analysis (`stride run`)
+Extracts features, runs prediction, and generates the interpretation dashboard in a single step:
+
 ```bash
 stride run \
-    --model svm \
-    --tumor-bam sample_tumor.bam \
+    --tumor-bam  sample_tumor.bam \
     --normal-bam sample_normal.bam \
-    --out-dir output/ \
-    --generate-qc
+    --sample-name SAMPLE_001 \
+    --model tabpfn \
+    --tabpfn-model ao_top1 \
+    --threshold auto \
+    --qc \
+    --explain \
+    --out-dir results/
 ```
+
+### Modular Commands
+- **Extract features only**:
+  ```bash
+  stride features --tumor-bam tumor.bam --normal-bam normal.bam --out-dir output/
+  ```
+- **Predict from features**:
+  ```bash
+  stride predict --model tabpfn --tabpfn-model ao_top1 --features-dir output/features/ --out-dir output/predictions/
+  ```
+- **List registered TabPFN models**:
+  ```bash
+  stride models
+  ```
+- **Generate standalone QC report**:
+  ```bash
+  stride qc --feature-tsv output/features/msi_features.tsv --prediction output/predictions/sample_prediction.tsv --output report.html
+  ```
+
+---
+
+## Bundled TabPFN Models
+
+| Model ID | Cohort | Rank | Features | Calibrated Threshold | Description |
+|:---|:---|:---:|:---|:---:|:---|
+| `ao_top1` *(Default)* | Access-Only | 1 | `entropy_diff, tumor_entropy` (ED + TE) | `0.6975` | Access-Only Top Model |
+| `ao_top2` | Access-Only | 2 | `tumor_entropy, normal_entropy, n_alleles_diff_norm_6` | `0.5178` | Access-Only Rank 2 |
+| `ao_top3` | Access-Only | 3 | `wasserstein_distance, tumor_entropy, normal_entropy` | `0.7213` | Access-Only Rank 3 |
+| `ao_top4` | Access-Only | 4 | `wasserstein_distance, tumor_entropy` | `0.7213` | Access-Only Rank 4 |
+| `ai_top1` | Access+Impact | 1 | `wasserstein_distance, tumor_entropy, normal_entropy` | `0.6853` | Access+Impact Top Model |
+| `ai_top2` | Access+Impact | 2 | `wasserstein_distance, tumor_entropy, n_alleles_diff_norm_4, n_alleles_diff_norm_6` | `0.7319` | Access+Impact Rank 2 |
+| `ai_top3` | Access+Impact | 3 | `wasserstein_distance, entropy_diff, tumor_entropy` | `0.7458` | Access+Impact Rank 3 |
+
+---
+
+## Output Files
+
+Executing either Nextflow or `stride run` generates:
+
+- `predictions/{sample}_prediction.tsv`: Final MSI call (`MSI` / `MSS`), probability score, model used, and decision threshold.
+- `qc/{sample}_interpretation_reports.html`: Standalone interactive report containing:
+  - Header with MSI status, probability score, and calibrated cutoff.
+  - Model attribution section with ShapIQ waterfall plot, summary cards, and driver table.
+  - Site Explorer ranking all 170 sites by interaction impact with embedded locus repeat distribution grid.
+- `qc/{sample}_drivers.tsv`: Ranked tabular driver loci.
 
 ---
 
 ## Disclaimer
 
-This pipeline is intended for research use within MSK-ACCESS and has not been validated for clinical deployment. Use and interpretation of results should follow institutional guidelines.
-
+This pipeline is developed for research use within MSK-ACCESS.

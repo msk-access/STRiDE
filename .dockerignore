@@ -1,0 +1,14 @@
+.git
+.github
+work/
+results*/
+env_packages.txt
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.egg-info/
+__pycache__/
+*.pyc
+._*
+.DS_Store

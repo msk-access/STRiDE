@@ -75,13 +75,21 @@ def get_predictor(method: str = "svm", **kwargs):
             from .tabpfn import TabPFNPredictor
 
             variant = kwargs.pop("variant", None)
+            tabpfn_model = kwargs.pop("tabpfn_model", None)
+            threshold = kwargs.pop("threshold", None)
+
             if method_key == "tabpfn_access_only":
                 variant = "access_only"
+                tabpfn_model = tabpfn_model or "ao_top1"
             elif method_key == "tabpfn_access_impact":
                 variant = "access_impact"
+                tabpfn_model = tabpfn_model or "ai_top1"
 
-            return (
-                TabPFNPredictor(variant=variant, **kwargs) if variant else TabPFNPredictor(**kwargs)
+            return TabPFNPredictor(
+                variant=variant,
+                tabpfn_model=tabpfn_model,
+                threshold=threshold,
+                **kwargs,
             )
         except ImportError as err:
             raise ImportError(

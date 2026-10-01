@@ -118,7 +118,7 @@ def features(
 @app.command()
 def predict(
     model: str = typer.Option(
-        "svm",
+        "tabpfn",
         "--model",
         help="Model architecture: 'svm', 'tabpfn', 'tabpfn_access_only', or 'tabpfn_access_impact'.",
     ),
@@ -142,6 +142,17 @@ def predict(
         None,
         "--matched-norm-sample-barcode",
         help="Matched normal sample barcode (MAF-standard). Populates output column.",
+    ),
+    tabpfn_model: Optional[str] = typer.Option(
+        None,
+        "--tabpfn-model",
+        "--preset",
+        help="TabPFN model preset ID (e.g. 'ao_top1', 'ai_top1', 'SPECIAL_k2__ed__te', etc.).",
+    ),
+    threshold: Optional[float] = typer.Option(
+        None,
+        "--threshold",
+        help="Decision boundary threshold override. Defaults to model's calibrated threshold.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
@@ -189,7 +200,12 @@ def predict(
     logger.info("Found %d sample(s) for prediction using model='%s'", len(tsvs_clean), model)
 
     # Initialize model predictor via factory
-    predictor_inst = get_predictor(method=model, model_path=model_joblib)
+    predictor_inst = get_predictor(
+        method=model,
+        model_path=model_joblib,
+        tabpfn_model=tabpfn_model,
+        threshold=threshold,
+    )
 
     # Run batch evaluation
     results_df = predictor_inst.predict_batch(tsvs_clean)
@@ -215,12 +231,19 @@ def predict(
         else ["MSS"] * len(sample_ids)
     )
 
+    calibrated_thrs = (
+        results_df["threshold"].tolist()
+        if "threshold" in results_df.columns
+        else [getattr(predictor_inst, "threshold", threshold or 0.50)] * len(sample_ids)
+    )
+
     df_preds = pd.DataFrame(
         {
             "Tumor_Sample_Barcode": sample_ids,
             "Matched_Norm_Sample_Barcode": [norm_bc] * len(sample_ids),
             "MSI_class_predicted": preds,
             "msi_score": scores,
+            "threshold": calibrated_thrs,
         }
     )
     paths = write_one_output_per_sample(df_preds, out_dir)
@@ -253,7 +276,7 @@ def predict(
 @app.command()
 def run(
     model: str = typer.Option(
-        "svm",
+        "tabpfn",
         "--model",
         help="Model architecture: 'svm', 'tabpfn', 'tabpfn_access_only', or 'tabpfn_access_impact'.",
     ),
@@ -305,6 +328,17 @@ def run(
     shapiq_budget: int = typer.Option(
         128, "--shapiq-budget", help="Evaluation budget for Shapley value sampling."
     ),
+    tabpfn_model: Optional[str] = typer.Option(
+        None,
+        "--tabpfn-model",
+        "--preset",
+        help="TabPFN model preset ID (e.g. 'ao_top1', 'ai_top1', 'SPECIAL_k2__ed__te', etc.).",
+    ),
+    threshold: Optional[float] = typer.Option(
+        None,
+        "--threshold",
+        help="Decision boundary threshold override. Defaults to model's calibrated threshold.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Enable debug logging."),
 ) -> None:
     """End-to-end MSI pipeline: BAMs → features → prediction."""
@@ -319,6 +353,12 @@ def run(
     # Resolve defaults
     resolved_sites = site_list or get_default_sites_path()
     resolved_model = model_joblib or (get_default_model_path() if model == "svm" else None)
+    if model == "svm" and resolved_model and not os.path.exists(resolved_model):
+        logger.error(
+            "Default SVM model '%s' not found. Please use --model tabpfn (default) or provide --model-joblib.",
+            resolved_model,
+        )
+        raise typer.Exit(code=1)
 
     # --- Batch mode ---
     if samples_list:
@@ -335,6 +375,8 @@ def run(
             generate_qc=generate_qc,
             explain=explain,
             shapiq_budget=shapiq_budget,
+            tabpfn_model=tabpfn_model,
+            threshold=threshold,
         )
 
         # Summary table
@@ -342,9 +384,13 @@ def run(
         table.add_column("Sample", style="cyan", no_wrap=True)
         table.add_column("Prediction File")
         if generate_qc:
-            table.add_column("QC Report")
+            table.add_column("Report")
             for r in results:
-                table.add_row(r["sample_id"], r["prediction_txt"], r.get("qc_report", ""))
+                table.add_row(
+                    r["sample_id"],
+                    r["prediction_txt"],
+                    r.get("interpretation_report", r.get("qc_report", "")),
+                )
         else:
             for r in results:
                 table.add_row(r["sample_id"], r["prediction_txt"])
@@ -375,11 +421,16 @@ def run(
         generate_qc=generate_qc,
         explain=explain,
         shapiq_budget=shapiq_budget,
+        tabpfn_model=tabpfn_model,
+        threshold=threshold,
     )
     logger.info("Sample: %s", res["sample_id"])
     logger.info("Prediction: %s", res["prediction_txt"])
     if generate_qc:
-        logger.info("QC Report: %s", res.get("qc_report"))
+        logger.info(
+            "Interpretation Report: %s",
+            res.get("interpretation_report", res.get("qc_report")),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -398,11 +449,19 @@ def qc(
     model: Optional[str] = typer.Option(
         "tabpfn", "--model", help="Model architecture for attribution: 'tabpfn' or 'svm'."
     ),
+    tabpfn_model: Optional[str] = typer.Option(
+        None,
+        "--tabpfn-model",
+        help="TabPFN model selection (e.g. 'ao_top1', 'ao_top2', 'ai_top1', combo name, or joblib path).",
+    ),
     model_joblib: Optional[str] = typer.Option(
         None, "--model-joblib", "--model-path", help="Path to custom trained model file."
     ),
+    threshold: Optional[float] = typer.Option(
+        None, "--threshold", help="Custom classification decision boundary threshold."
+    ),
     output: str = typer.Option(
-        "qc_report.html", "--output", help="Output path for the HTML report."
+        "interpretation_report.html", "--output", help="Output path for the HTML report."
     ),
     explain: bool = typer.Option(
         True,
@@ -429,10 +488,17 @@ def qc(
         raise typer.Exit(code=1)
 
     pred_info = None
+    calibrated_thr = threshold
     if prediction:
         try:
             df_pred = pd.read_csv(prediction, sep="\t")
             if not df_pred.empty:
+                t_val = df_pred.iloc[0].get("threshold")
+                if t_val is not None and pd.notna(t_val) and calibrated_thr is None:
+                    try:
+                        calibrated_thr = float(t_val)
+                    except (ValueError, TypeError):
+                        pass
                 pred_info = {
                     "msi_status": df_pred.iloc[0].get(
                         "MSI_class_predicted", df_pred.iloc[0].get("prediction", "UNKNOWN")
@@ -441,13 +507,22 @@ def qc(
                         df_pred.iloc[0].get("msi_score", df_pred.iloc[0].get("p_msi", 0.0))
                     ),
                 }
+                if calibrated_thr is not None:
+                    pred_info["threshold"] = calibrated_thr
         except Exception as e:
             logger.warning(f"Failed to parse prediction file: {e}")
 
     att_info = None
     if explain and model:
         try:
-            predictor_inst = get_predictor(method=model, model_path=model_joblib)
+            predictor_inst = get_predictor(
+                method=model,
+                model_path=model_joblib,
+                tabpfn_model=tabpfn_model,
+                threshold=calibrated_thr,
+            )
+            if hasattr(predictor_inst, "threshold") and predictor_inst.threshold is not None:
+                calibrated_thr = float(predictor_inst.threshold)
             if hasattr(predictor_inst, "explain_sample"):
                 logger.info("Computing ShapIQ locus attributions for %s...", feature_tsv)
                 att_info = predictor_inst.explain_sample(feature_tsv, budget=shapiq_budget)
@@ -455,10 +530,18 @@ def qc(
                     pred_info = {
                         "msi_status": att_info.get("prediction", "UNKNOWN"),
                         "msi_score": float(att_info.get("p_msi", 0.0)),
+                        "threshold": calibrated_thr or 0.50,
                     }
+                elif "threshold" not in pred_info and calibrated_thr is not None:
+                    pred_info["threshold"] = calibrated_thr
                 # Save accompanying driver TSV in same directory as output report
                 out_p = Path(output)
-                driver_tsv = out_p.parent / f"{out_p.stem.replace('_qc', '')}_drivers.tsv"
+                clean_stem = (
+                    out_p.stem.replace("_qc", "")
+                    .replace("_interpretation_reports", "")
+                    .replace("_interpretation_report", "")
+                )
+                driver_tsv = out_p.parent / f"{clean_stem}_drivers.tsv"
                 from stride.core.explainability import export_driver_tsv
 
                 export_driver_tsv(att_info["site_attributions"], driver_tsv)
@@ -466,11 +549,23 @@ def qc(
         except Exception as e:
             logger.warning("Could not compute model explainability: %s", e)
 
+    if calibrated_thr is None and model_joblib:
+        try:
+            from .models.tabpfn.registry import parse_threshold_from_filename
+            cand_th = parse_threshold_from_filename(model_joblib)
+            if cand_th is not None:
+                calibrated_thr = float(cand_th)
+                if pred_info and "threshold" not in pred_info:
+                    pred_info["threshold"] = calibrated_thr
+        except Exception:
+            pass
+
     generate_report(
         feature_tsv=feature_tsv,
         output_path=output,
         prediction_result=pred_info,
         attribution_result=att_info,
+        threshold=calibrated_thr,
     )
 
 
@@ -533,3 +628,52 @@ def train(
     )
 
     logger.info("Training complete. Artifacts saved to: %s", out_path)
+
+
+# ---------------------------------------------------------------------------
+# stride models
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="models")
+def list_models() -> None:
+    """List all available TabPFN models, features, thresholds, and ranks."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from .models.tabpfn.registry import load_manifest
+
+    console = Console()
+    manifest = load_manifest()
+    if not manifest:
+        console.print("[yellow]No models found in models.tsv manifest.[/yellow]")
+        return
+
+    table = Table(title="Available TabPFN Models (STRiDE)")
+    table.add_column("Model ID", style="cyan bold", no_wrap=True)
+    table.add_column("Cohort", style="magenta")
+    table.add_column("Rank", justify="center")
+    table.add_column("Combo Name", style="green")
+    table.add_column("Threshold", justify="right", style="bold yellow")
+    table.add_column("Features Included", style="white")
+    table.add_column("Status", justify="center")
+
+    for m in manifest:
+        status = "[green]Ready[/green]" if m.exists else "[red]Missing[/red]"
+        table.add_row(
+            m.model_id,
+            m.cohort,
+            str(m.rank),
+            m.combo_name,
+            f"{m.threshold:.4f}",
+            ", ".join(m.features),
+            status,
+        )
+
+    console.print(table)
+
+
+if __name__ == "__main__":
+    app()
+
+

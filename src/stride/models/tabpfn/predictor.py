@@ -20,12 +20,25 @@ class TabPFNPredictor(BasePredictor):
         imputer_path: Optional[Union[str, Path]] = None,
         columns_path: Optional[Union[str, Path]] = None,
         variant: Optional[str] = None,
+        tabpfn_model: Optional[str] = None,
         threshold: Optional[float] = None,
         device: str = "cpu",
     ):
+        from .registry import resolve_tabpfn_model
+
         self.variant = variant
         self.device = device
-        self.default_threshold = threshold if threshold is not None else 0.660658
+        self.explicit_threshold = float(threshold) if threshold is not None else None
+
+        resolved_model_path, default_thr, model_info = resolve_tabpfn_model(
+            model_identifier=tabpfn_model or variant,
+            custom_path=model_path,
+            cohort=variant,
+        )
+
+        self.model_info = model_info
+        if model_path is None:
+            model_path = resolved_model_path
 
         # Resolve variant directory if variant is specified
         variant_dir = DEFAULT_TABPFN_DIR
@@ -33,13 +46,6 @@ class TabPFNPredictor(BasePredictor):
             cand_variant_dir = DEFAULT_TABPFN_DIR / variant
             if cand_variant_dir.is_dir():
                 variant_dir = cand_variant_dir
-
-        if model_path is None:
-            # Check for best model pipeline first, then finetuned joblib
-            if (variant_dir / "tabpfn_best_model_pipeline.joblib").exists():
-                model_path = variant_dir / "tabpfn_best_model_pipeline.joblib"
-            else:
-                model_path = variant_dir / "tabpfn_finetuned.joblib"
 
         if imputer_path is None:
             imputer_path = variant_dir / "imputer.joblib"
@@ -52,7 +58,7 @@ class TabPFNPredictor(BasePredictor):
         self.model_path = Path(model_path)
         self.imputer_path = Path(imputer_path)
         self.columns_path = Path(columns_path)
-        self.threshold = self.default_threshold
+        self.threshold = self.explicit_threshold if self.explicit_threshold is not None else default_thr
 
         if self.device == "cpu":
             apply_cpu_patches()
@@ -60,31 +66,53 @@ class TabPFNPredictor(BasePredictor):
         self._load_components()
 
     def _load_components(self):
+        import traceback
+        import warnings
         setup_tabpfn_shims()
         # Check if model_path points to an all-in-one pipeline artifact dictionary
 
-        if self.model_path.exists():
-            try:
-                raw = joblib.load(self.model_path)
-            except Exception:
-                with open(self.model_path, "rb") as f:
-                    raw = pickle.load(f)
-
-            if isinstance(raw, dict) and "model" in raw:
-                self.model = raw["model"]
-                self.imputer = raw.get("imputer", None)
-                self.selector = raw.get("selector", None)
-                self.expected_columns = raw.get(
-                    "best_columns", raw.get("combo_cols", raw.get("feature_columns", []))
-                )
-                if "threshold" in raw:
-                    self.threshold = float(raw["threshold"])
-                self._apply_device_fixes()
-                return
-
-            self.model = raw
-        else:
+        if not self.model_path.exists():
             raise FileNotFoundError(f"Model path does not exist: {self.model_path}")
+
+        raw = None
+        joblib_exc = None
+        try:
+            raw = joblib.load(self.model_path)
+        except Exception as exc:  # noqa: BLE001
+            joblib_exc = exc
+            warnings.warn(
+                f"[STRiDE] joblib.load failed for {self.model_path}: {exc!r}\n"
+                + traceback.format_exc(),
+                stacklevel=2,
+            )
+
+        if raw is None:
+            # joblib failed – try raw pickle as fallback
+            try:
+                with open(self.model_path, "rb") as fh:
+                    raw = pickle.load(fh)
+            except Exception as pickle_exc:
+                raise RuntimeError(
+                    f"[STRiDE] Both joblib.load and pickle.load failed for "
+                    f"{self.model_path}.\n"
+                    f"  joblib error : {joblib_exc!r}\n"
+                    f"  pickle error : {pickle_exc!r}\n"
+                    "Check that the tabpfn shims cover all required classes."
+                ) from pickle_exc
+
+        if isinstance(raw, dict) and "model" in raw:
+            self.model = raw["model"]
+            self.imputer = raw.get("imputer", None)
+            self.selector = raw.get("selector", None)
+            self.expected_columns = raw.get(
+                "best_columns", raw.get("combo_cols", raw.get("feature_columns", []))
+            )
+            if self.explicit_threshold is None and "threshold" in raw:
+                self.threshold = float(raw["threshold"])
+            self._apply_device_fixes()
+            return
+
+        self.model = raw
 
         # If not an all-in-one dictionary, load individual components
         # 1) Load expected feature columns
@@ -96,11 +124,20 @@ class TabPFNPredictor(BasePredictor):
         # 2) Load SimpleImputer
         if not self.imputer_path.exists():
             raise FileNotFoundError(f"Imputer path does not exist: {self.imputer_path}")
+        imputer_exc = None
         try:
             self.imputer = joblib.load(self.imputer_path)
-        except Exception:
-            with open(self.imputer_path, "rb") as f:
-                self.imputer = pickle.load(f)
+        except Exception as exc:  # noqa: BLE001
+            imputer_exc = exc
+            try:
+                with open(self.imputer_path, "rb") as fh:
+                    self.imputer = pickle.load(fh)
+            except Exception as pickle_exc:
+                raise RuntimeError(
+                    f"[STRiDE] Failed to load imputer from {self.imputer_path}.\n"
+                    f"  joblib error : {imputer_exc!r}\n"
+                    f"  pickle error : {pickle_exc!r}"
+                ) from pickle_exc
 
         self._apply_device_fixes()
 
