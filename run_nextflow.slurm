@@ -39,7 +39,7 @@ set -u
 INPUT_CSV="${INPUT_CSV:-tests/data/qc/test_samplesheet.csv}"
 OUTDIR="${OUTDIR:-results_nf_${SLURM_JOB_ID:-test}}"
 MODEL="${MODEL:-svm}"                  # svm, tabpfn, tabpfn_access_only, tabpfn_access_impact
-PROFILE="${PROFILE:-slurm}"            # slurm, local, docker, singularity
+PROFILE="${PROFILE:-slurm_singularity}" # slurm_singularity, slurm, local, docker, singularity
 GENERATE_QC="${GENERATE_QC:-true}"
 EXPLAIN="${EXPLAIN:-true}"
 SHAPIQ_BUDGET="${SHAPIQ_BUDGET:-128}"

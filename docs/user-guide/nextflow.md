@@ -68,7 +68,8 @@ Select a profile with `-profile <name>`:
 |---------|-----------|----------|----------|
 | `docker` | Docker | Local | Local development, CI |
 | `singularity` | Singularity | Local | HPC without Docker |
-| `slurm` | Singularity | SLURM (`cmobic_cpu`) | MSKCC HPC cluster |
+| `slurm` | None (host environment) | SLURM (`cmobic_cpu`) | Cluster run using host-installed STRiDE |
+| `slurm_singularity` | Singularity | SLURM (`cmobic_cpu`) | Containerized run on MSKCC HPC |
 | `local` | None | Local | `stride` installed locally |
 | `test` | — | — | CI validation (minimal resources) |
 | `debug` | — | — | Prints hostname before each task |
@@ -76,11 +77,17 @@ Select a profile with `-profile <name>`:
 Profiles can be combined:
 
 ```bash
-# SLURM on MSKCC cluster
+# SLURM on MSKCC cluster using host-installed STRiDE
 nextflow run nextflow/main.nf \
     --input samples.csv \
     --outdir results/ \
     -profile slurm
+
+# SLURM on MSKCC cluster using the STRiDE Singularity container
+nextflow run nextflow/main.nf \
+    --input samples.csv \
+    --outdir results/ \
+    -profile slurm_singularity
 
 # Local development (no container)
 nextflow run nextflow/main.nf \
@@ -98,6 +105,7 @@ nextflow run nextflow/main.nf \
 
 ```
 results/
+├── manifest.json
 ├── stride/
 │   ├── features/
 │   │   └── msi_features_PATIENT_001.tsv
@@ -112,6 +120,8 @@ results/
     ├── execution_timeline.html
     └── pipeline_dag.svg
 ```
+
+On successful runs, `manifest.json` lists the absolute paths of files published under the output directory. Voyager uses this list to register the run's outputs.
 
 ## Pipeline Architecture
 
@@ -190,7 +200,7 @@ For HPC environments without Docker:
 # Pull and cache the container
 singularity pull docker://ghcr.io/msk-access/stride:latest
 
-# Run with Singularity profile
+# Run with Singularity profile (local executor)
 nextflow run nextflow/main.nf \
     --input samples.csv \
     --outdir results/ \
@@ -198,4 +208,4 @@ nextflow run nextflow/main.nf \
 ```
 
 !!! tip "MSKCC Users"
-    Use `-profile slurm` which automatically enables Singularity and submits to the `cmobic_cpu` queue.
+    Use `-profile slurm_singularity` to submit to `cmobic_cpu` and run tasks in the Singularity container. The `slurm` profile instead uses STRiDE installed in the host environment.

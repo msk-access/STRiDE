@@ -61,7 +61,30 @@ def resolveTabpfnModel(preset, projDir) {
         def rowJoblib = row.artifact_relpath ? file(row.artifact_relpath).name.toLowerCase() : ''
         return (rowId == targetId || rowCombo == targetId || rowJoblib == targetId)
     }
-    return match ? file("${projDir}/../src/stride/models/tabpfn/${match.artifact_relpath}") : null
+    def artifact = match ? file("${projDir}/../src/stride/models/tabpfn/${match.artifact_relpath}") : null
+    return artifact?.exists() ? artifact : null
+}
+
+def resolveInputFile(configuredPath, fallbackPaths) {
+    if (configuredPath) return file(configuredPath, checkIfExists: true)
+
+    return fallbackPaths.find { candidate -> candidate?.exists() } ?: file('NO_FILE')
+}
+
+def writePipelineOutputManifest(outdir) {
+    if (!workflow.success) return
+
+    def outdirPath = file(outdir)
+    def manifestPath = outdirPath.resolve('manifest.json')
+    def publishedFiles = []
+
+    outdirPath.eachFileRecurse(groovy.io.FileType.FILES) { outputFile ->
+        if (outputFile != manifestPath) {
+            publishedFiles << [target: outputFile.toAbsolutePath().toString()]
+        }
+    }
+
+    manifestPath.text = groovy.json.JsonOutput.toJson([published: publishedFiles])
 }
 
 /*
@@ -123,27 +146,33 @@ workflow {
     //
     // Uses bundled defaults from the STRiDE package if not specified
     //
-    def ch_sites = params.site_list
-        ? file(params.site_list, checkIfExists: true)
-        : (file("${projectDir}/../src/stride/data/msi_sites_170.txt").exists()
-            ? file("${projectDir}/../src/stride/data/msi_sites_170.txt")
-            : file('NO_FILE'))
+    def ch_sites = resolveInputFile(params.site_list, [
+        file("${projectDir}/../src/stride/data/msi_sites_170.txt")
+    ])
 
-    def ch_model = params.model_joblib
-        ? file(params.model_joblib, checkIfExists: true)
-        : (params.model.toString().toLowerCase().contains('tabpfn')
-            ? (resolveTabpfnModel(params.tabpfn_model ?: (params.model.toString().toLowerCase().contains('impact') ? 'ai_top1' : 'ao_top1'), projectDir)
-                ?: (file("${projectDir}/../src/stride/models/tabpfn/tabpfn_finetuned.joblib").exists()
-                    ? file("${projectDir}/../src/stride/models/tabpfn/tabpfn_finetuned.joblib")
-                    : file('NO_FILE')))
-            : (file("${projectDir}/../src/stride/models/svm/msi_sgd_v1.joblib").exists()
-                ? file("${projectDir}/../src/stride/models/svm/msi_sgd_v1.joblib")
-                : (file("${projectDir}/../src/stride/models/msi_sgd_v1.joblib").exists()
-                    ? file("${projectDir}/../src/stride/models/msi_sgd_v1.joblib")
-                    : file('NO_FILE'))))
+    def modelType = params.model.toString().toLowerCase()
+    def defaultModels = []
+
+    if (modelType.contains('tabpfn')) {
+        def defaultPreset = modelType.contains('impact') ? 'ai_top1' : 'ao_top1'
+        def preset = params.tabpfn_model ?: defaultPreset
+        def presetModel = resolveTabpfnModel(preset, projectDir)
+        if (presetModel) defaultModels << presetModel
+
+        defaultModels << file("${projectDir}/../src/stride/models/tabpfn/tabpfn_finetuned.joblib")
+    } else {
+        defaultModels << file("${projectDir}/../src/stride/models/svm/msi_sgd_v1.joblib")
+        defaultModels << file("${projectDir}/../src/stride/models/msi_sgd_v1.joblib")
+    }
+
+    def ch_model = resolveInputFile(params.model_joblib, defaultModels)
 
     //
     // STEP 3: Run the pipeline
     //
     STRIDE ( ch_input, ch_sites, ch_model )
+}
+
+workflow.onComplete {
+    writePipelineOutputManifest(params.outdir)
 }
