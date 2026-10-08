@@ -34,6 +34,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . /build
 RUN pip install --no-cache-dir "/build[all]" && rm -rf /build
 
+# numba (via shapiq -> galois) needs a writable cache dir; site-packages is
+# read-only when this image runs under Singularity
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache
+
 # Verify installation
 RUN stride --version
 

@@ -70,7 +70,7 @@ Select a profile with `-profile <name>`:
 |---------|-----------|----------|----------|
 | `docker` | Docker | Local | Local development, CI |
 | `singularity` | Singularity | Local | HPC without Docker |
-| `slurm` | None (host environment) | SLURM (`cmobic_cpu`) | Cluster run using host-installed STRiDE |
+| `slurm` | None unless combined | SLURM (`cmobic_cpu`) | Host-installed STRiDE alone; combine with `singularity` for the container |
 | `slurm_singularity` | Singularity | SLURM (`cmobic_cpu`) | Containerized run on MSKCC HPC |
 | `local` | None | Local | `stride` installed locally |
 | `test` | — | — | CI validation (minimal resources) |
@@ -89,7 +89,7 @@ nextflow run nextflow/main.nf \
 nextflow run nextflow/main.nf \
     --input samples.csv \
     --outdir results/ \
-    -profile slurm_singularity
+    -profile slurm,singularity    # equivalent to -profile slurm_singularity
 
 # Local development (no container)
 nextflow run nextflow/main.nf \
