@@ -1,3 +1,2 @@
-# Git LFS configuration for binary model weights
-*.joblib filter=lfs diff=lfs merge=lfs -text
-src/stride/models/tabpfn/artifacts/**/*.joblib filter=lfs diff=lfs merge=lfs -text
+# Model weights are stored as regular git files (no LFS) so plain clones work
+*.joblib binary
