@@ -1,0 +1,230 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/msk-access/STRiDE/main/nextflow_schema.json",
+    "title": "STRiDE pipeline parameters",
+    "description": "MSI prediction pipeline for MSK-ACCESS",
+    "type": "object",
+    "$defs": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "fa_icon": "fas fa-terminal",
+            "description": "Define where the pipeline should find input data and save output data.",
+            "required": [
+                "input",
+                "outdir"
+            ],
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "schema": "assets/schema_input.json",
+                    "mimetype": "text/csv",
+                    "pattern": "^\\S+\\.csv$",
+                    "description": "Path to the tumor/normal samplesheet CSV.",
+                    "help_text": "One row per tumor/normal pair. BAI indexes are auto-discovered next to each BAM. See assets/schema_input.json for the column definitions.",
+                    "fa_icon": "fas fa-file-csv"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The output directory where the results will be saved.",
+                    "fa_icon": "fas fa-folder-open",
+                    "default": "results"
+                }
+            }
+        },
+        "model_options": {
+            "title": "Model options",
+            "type": "object",
+            "fa_icon": "fas fa-brain",
+            "description": "Select the MSI classifier and its decision threshold.",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "default": "tabpfn",
+                    "enum": ["svm", "tabpfn", "tabpfn_access_only", "tabpfn_access_impact"],
+                    "description": "Model architecture used for MSI prediction.",
+                    "fa_icon": "fas fa-project-diagram"
+                },
+                "tabpfn_model": {
+                    "type": "string",
+                    "default": "ao_top1",
+                    "description": "TabPFN preset from src/stride/models/tabpfn/models.tsv (model_id, combo_name, or joblib filename).",
+                    "help_text": "Access-only presets: ao_top1, ao_top2, ao_top3, ao_top4. Access+IMPACT presets: ai_top1, ai_top2, ai_top3. Ignored when model is 'svm'.",
+                    "fa_icon": "fas fa-layer-group"
+                },
+                "threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Decision boundary threshold. Leave unset to use the calibrated threshold from models.tsv / the model joblib.",
+                    "fa_icon": "fas fa-sliders-h"
+                },
+                "model_joblib": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "pattern": "^\\S+\\.joblib$",
+                    "description": "Custom trained model. Leave unset to use the bundled model for the selected preset.",
+                    "fa_icon": "fas fa-file"
+                }
+            }
+        },
+        "feature_options": {
+            "title": "Feature extraction options",
+            "type": "object",
+            "fa_icon": "fas fa-dna",
+            "description": "Control how microsatellite features are extracted from the BAMs.",
+            "properties": {
+                "site_list": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "description": "MSI site list. Leave unset to use the bundled 170-site list.",
+                    "fa_icon": "fas fa-list"
+                },
+                "min_coverage": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "description": "Minimum read coverage per site.",
+                    "fa_icon": "fas fa-filter"
+                },
+                "max_repeat_bins": {
+                    "type": "integer",
+                    "default": 100,
+                    "minimum": 1,
+                    "description": "Maximum repeat-count bins.",
+                    "fa_icon": "fas fa-chart-bar"
+                }
+            }
+        },
+        "report_options": {
+            "title": "Report options",
+            "type": "object",
+            "fa_icon": "fas fa-file-alt",
+            "description": "QC report and explainability outputs.",
+            "properties": {
+                "generate_qc": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Generate the interactive QC HTML report.",
+                    "fa_icon": "fas fa-clipboard-check"
+                },
+                "explain": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Compute ShapIQ locus attributions and the driver TSV.",
+                    "fa_icon": "fas fa-search"
+                },
+                "shapiq_budget": {
+                    "type": "integer",
+                    "default": 128,
+                    "minimum": 1,
+                    "description": "Evaluation budget for Shapley value sampling.",
+                    "fa_icon": "fas fa-calculator"
+                }
+            }
+        },
+        "max_job_request_options": {
+            "title": "Max job request options",
+            "type": "object",
+            "fa_icon": "fab fa-acquisitions-incorporated",
+            "description": "Set the top limit for requested resources for any single job.",
+            "properties": {
+                "max_cpus": {
+                    "type": "integer",
+                    "default": 16,
+                    "description": "Maximum number of CPUs that can be requested for any single job.",
+                    "fa_icon": "fas fa-microchip",
+                    "hidden": true
+                },
+                "max_memory": {
+                    "type": "string",
+                    "default": "128.GB",
+                    "pattern": "^\\d+(\\.\\d+)?\\.?\\s*(K|M|G|T)?B$",
+                    "description": "Maximum amount of memory that can be requested for any single job.",
+                    "fa_icon": "fas fa-memory",
+                    "hidden": true
+                },
+                "max_time": {
+                    "type": "string",
+                    "default": "240.h",
+                    "pattern": "^(\\d+\\.?\\s*(s|m|h|d|day)\\s*)+$",
+                    "description": "Maximum amount of time that can be requested for any single job.",
+                    "fa_icon": "far fa-clock",
+                    "hidden": true
+                }
+            }
+        },
+        "generic_options": {
+            "title": "Generic options",
+            "type": "object",
+            "fa_icon": "fas fa-file-import",
+            "description": "Less common options for the pipeline, typically set in a config file.",
+            "properties": {
+                "help": {
+                    "type": "boolean",
+                    "description": "Display help text.",
+                    "fa_icon": "fas fa-question-circle",
+                    "hidden": true
+                },
+                "publish_dir_mode": {
+                    "type": "string",
+                    "default": "copy",
+                    "description": "Method used to save pipeline results to output directory.",
+                    "fa_icon": "fas fa-copy",
+                    "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
+                    "hidden": true
+                },
+                "stride_version": {
+                    "type": "string",
+                    "default": "latest",
+                    "description": "Tag of the ghcr.io/msk-access/stride container image.",
+                    "fa_icon": "fab fa-docker",
+                    "hidden": true
+                },
+                "tracedir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Directory for execution trace, report, timeline and DAG. Defaults to <outdir>/pipeline_info.",
+                    "fa_icon": "fas fa-cogs",
+                    "hidden": true
+                }
+            }
+        }
+    },
+    "allOf": [
+        {
+            "$ref": "#/$defs/input_output_options"
+        },
+        {
+            "$ref": "#/$defs/model_options"
+        },
+        {
+            "$ref": "#/$defs/feature_options"
+        },
+        {
+            "$ref": "#/$defs/report_options"
+        },
+        {
+            "$ref": "#/$defs/max_job_request_options"
+        },
+        {
+            "$ref": "#/$defs/generic_options"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "outputs",
+            "schema": {
+                "type": {
+                    "items": "File",
+                    "type": "array"
+                }
+            }
+        }
+    ]
+}

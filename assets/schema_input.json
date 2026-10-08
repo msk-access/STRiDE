@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/msk-access/STRiDE/main/assets/schema_input.json",
+    "title": "STRiDE pipeline - params.input schema",
+    "description": "Schema for the samplesheet provided with params.input. One row per tumor/normal pair; BAI indexes are auto-discovered next to each BAM (sample.bam.bai or sample.bai).",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "sample_id": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "sample_id must be provided and cannot contain spaces",
+                "description": "Unique tumor sample identifier (e.g. P-0012345-T01-XS1)"
+            },
+            "tumor_bam": {
+                "type": "string",
+                "format": "file-path",
+                "pattern": "^\\S+\\.bam$",
+                "errorMessage": "tumor_bam must be a path to a .bam file and cannot contain spaces",
+                "description": "Path to the tumor BAM"
+            },
+            "normal_bam": {
+                "type": "string",
+                "format": "file-path",
+                "pattern": "^\\S+\\.bam$",
+                "errorMessage": "normal_bam must be a path to a .bam file and cannot contain spaces",
+                "description": "Path to the matched normal BAM"
+            },
+            "matched_norm_sample_barcode": {
+                "type": "string",
+                "pattern": "^\\S*$",
+                "errorMessage": "matched_norm_sample_barcode cannot contain spaces",
+                "description": "Normal sample identifier (e.g. P-0012345-N01-XS1). Defaults to the normal BAM basename when empty."
+            }
+        },
+        "required": ["sample_id", "tumor_bam", "normal_bam"]
+    }
+}

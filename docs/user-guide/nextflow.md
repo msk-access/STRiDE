@@ -34,6 +34,8 @@ PATIENT_002,/data/P002_T.bam,/data/P002_N.bam,
 | `normal_bam` | ✅ | Path to normal BAM |
 | `matched_norm_sample_barcode` | ❌ | Explicit normal barcode (defaults to BAM basename) |
 
+The sample sheet columns are formally defined in [`assets/schema_input.json`](https://github.com/msk-access/STRiDE/blob/main/assets/schema_input.json), which Voyager uses to build inputs for the pipeline.
+
 !!! note "BAI Index Discovery"
     BAI files are auto-discovered. Both naming conventions are supported:
     `sample.bam.bai` and `sample.bai`.
