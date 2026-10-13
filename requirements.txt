@@ -12,7 +12,7 @@ matplotlib>=3.7.0
 
 # Optional TabPFN & Explainability dependencies
 torch>=2.0.0
-tabpfn==8.4.0
+tabpfn==6.3.2  # must match the version that pickled models/tabpfn/*.joblib
 shapiq>=1.4.0
 
 # Optional QC dependencies
