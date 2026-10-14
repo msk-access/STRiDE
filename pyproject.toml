@@ -68,7 +68,7 @@ qc = [
 
 tabpfn = [
     "torch>=2.0.0",
-    "tabpfn==6.3.2",  # must match the version that pickled models/tabpfn/*.joblib
+    "tabpfn==8.4.0",  # must match the version that pickled the SPECIAL_* preset models
     "shapiq>=1.4.0",
 ]
 
