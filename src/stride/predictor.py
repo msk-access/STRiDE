@@ -244,6 +244,27 @@ def predict_from_feature_tsvs(
     )
 
 
+def raise_on_failed_predictions(res_df: pd.DataFrame) -> None:
+    """Raise if any row returned by a predictor's ``predict_batch`` failed.
+
+    ``predict_batch`` records a per-sample failure as a ``prediction`` value of
+    ``"ERROR: <message>"`` so the remaining samples still run. Call this before
+    writing outputs so a failure stops the run instead of being written as a result.
+
+    Raises
+    ------
+    RuntimeError
+        Listing every failed sample and its error message.
+    """
+    if "prediction" not in res_df.columns:
+        return
+    failed = res_df[res_df["prediction"].astype(str).str.startswith("ERROR")]
+    if failed.empty:
+        return
+    details = "; ".join(f"{row.sample_id}: {row.prediction}" for row in failed.itertuples())
+    raise RuntimeError(f"Prediction failed for {len(failed)} sample(s): {details}")
+
+
 def write_one_output_per_sample(df_preds: pd.DataFrame, out_dir: str) -> list[str]:
     """Write one tab-delimited prediction file per sample.
 

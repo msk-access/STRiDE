@@ -62,7 +62,6 @@ process STRIDE_RUN {
     // Site list and model: pass only if real files (not NO_FILE sentinel)
     def site_arg   = site_list.name  != 'NO_FILE' ? "--site-list ${site_list}"    : ''
     def model_arg  = model_joblib.name != 'NO_FILE' ? "--model-joblib ${model_joblib}" : ''
-    def tabpfn_arg = (params.model.toString().toLowerCase().contains('tabpfn') && params.tabpfn_model) ? "--tabpfn-model '${params.tabpfn_model}'" : ''
     def thresh_arg = params.threshold ? "--threshold ${params.threshold}" : ''
 
     """
@@ -81,7 +80,6 @@ process STRIDE_RUN {
 
     stride run \\
         --model      ${params.model} \\
-        ${tabpfn_arg} \\
         ${thresh_arg} \\
         --tumor-bam  ${tumor_bam} \\
         --normal-bam ${normal_bam} \\

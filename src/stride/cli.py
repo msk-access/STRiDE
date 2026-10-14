@@ -11,6 +11,7 @@ All parameters are explicit ``--options``; no positional arguments.
 """
 
 import logging
+import os
 from typing import Optional
 
 import typer
@@ -51,6 +52,23 @@ def main(
     ),
 ) -> None:
     """STRiDE — Microsatellite Instability prediction for MSK-ACCESS."""
+
+
+def _require_tabpfn_model(model: str, model_joblib: Optional[str], tabpfn_model: Optional[str]) -> None:
+    """Exit before any work starts when a TabPFN run has no usable model file."""
+    if not model.lower().startswith("tabpfn"):
+        return
+    from .models.tabpfn.registry import resolve_tabpfn_model
+
+    cohort = model.lower().removeprefix("tabpfn").lstrip("_") or None
+    try:
+        resolve_tabpfn_model(tabpfn_model, model_joblib, cohort=cohort)
+    except FileNotFoundError as exc:
+        logger.error("%s", exc)
+        raise typer.Exit(code=1) from exc
+    if not os.path.exists(model_joblib):
+        logger.error("Model file not found: %s", model_joblib)
+        raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +144,7 @@ def predict(
         None,
         "--model-joblib",
         "--model-path",
-        help="Path to custom trained model file (overrides default).",
+        help="Path to trained model file. Required for TabPFN (preset model files are not bundled).",
     ),
     features_dir: Optional[str] = typer.Option(
         None, "--features-dir", help="Directory containing feature TSVs (recursive search)."
@@ -147,7 +165,7 @@ def predict(
         None,
         "--tabpfn-model",
         "--preset",
-        help="TabPFN model preset ID (e.g. 'ao_top1', 'ai_top1', 'SPECIAL_k2__ed__te', etc.).",
+        help="TabPFN preset ID (e.g. 'ao_top1'). Only names the expected file; the model is read from --model-joblib.",
     ),
     threshold: Optional[float] = typer.Option(
         None,
@@ -165,10 +183,11 @@ def predict(
     from rich.table import Table
 
     from .models import get_predictor
-    from .predictor import write_one_output_per_sample
+    from .predictor import raise_on_failed_predictions, write_one_output_per_sample
 
     setup_logging(verbose=verbose)
     console = Console()
+    _require_tabpfn_model(model, model_joblib, tabpfn_model)
 
     # Delegate file gathering
     tsvs: list[str] = []
@@ -209,6 +228,11 @@ def predict(
 
     # Run batch evaluation
     results_df = predictor_inst.predict_batch(tsvs_clean)
+    try:
+        raise_on_failed_predictions(results_df)
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        raise typer.Exit(code=1) from exc
 
     # Align with MAF output schema
     sample_ids = []
@@ -294,7 +318,7 @@ def run(
         None,
         "--model-joblib",
         "--model-path",
-        help="Path to custom trained model file (overrides default).",
+        help="Path to trained model file. Required for TabPFN (preset model files are not bundled).",
     ),
     samples_list: Optional[str] = typer.Option(
         None,
@@ -332,7 +356,7 @@ def run(
         None,
         "--tabpfn-model",
         "--preset",
-        help="TabPFN model preset ID (e.g. 'ao_top1', 'ai_top1', 'SPECIAL_k2__ed__te', etc.).",
+        help="TabPFN preset ID (e.g. 'ao_top1'). Only names the expected file; the model is read from --model-joblib.",
     ),
     threshold: Optional[float] = typer.Option(
         None,
@@ -349,6 +373,8 @@ def run(
 
     setup_logging(verbose=verbose)
     console = Console()
+
+    _require_tabpfn_model(model, model_joblib, tabpfn_model)
 
     # Resolve defaults
     resolved_sites = site_list or get_default_sites_path()
@@ -637,7 +663,7 @@ def train(
 
 @app.command(name="models")
 def list_models() -> None:
-    """List all available TabPFN models, features, thresholds, and ranks."""
+    """List known TabPFN presets: features, calibrated thresholds, ranks and model filenames."""
     from rich.console import Console
     from rich.table import Table
 
@@ -656,10 +682,9 @@ def list_models() -> None:
     table.add_column("Combo Name", style="green")
     table.add_column("Threshold", justify="right", style="bold yellow")
     table.add_column("Features Included", style="white")
-    table.add_column("Status", justify="center")
+    table.add_column("Model File (pass via --model-joblib)")
 
     for m in manifest:
-        status = "[green]Ready[/green]" if m.exists else "[red]Missing[/red]"
         table.add_row(
             m.model_id,
             m.cohort,
@@ -667,7 +692,7 @@ def list_models() -> None:
             m.combo_name,
             f"{m.threshold:.4f}",
             ", ".join(m.features),
-            status,
+            m.filename,
         )
 
     console.print(table)

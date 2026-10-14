@@ -53,9 +53,10 @@ The sample sheet columns are formally defined in [`assets/schema_input.json`](ht
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--outdir` | `results` | Output directory |
-| `--model` | `svm` | Model architecture choice (`svm` or `tabpfn`) |
+| `--model` | `tabpfn` | Model architecture choice (`svm` or `tabpfn`) |
 | `--site_list` | bundled 170-site | Custom MSI site list (TXT format) |
-| `--model_joblib` | bundled model | Custom trained model path |
+| `--model_joblib` | required for TabPFN; bundled model for SVM | Path to the trained model `.joblib`. TabPFN preset files are not bundled (run `stride models` for preset filenames) |
+| `--threshold` | calibrated | Decision threshold override. By default the calibrated threshold is looked up from the model filename |
 | `--min_coverage` | `20` | Minimum read coverage per site |
 | `--max_repeat_bins` | `100` | Maximum repeat-count bins |
 | `--generate_qc` | `true` | Generate interactive QC HTML report |

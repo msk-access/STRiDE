@@ -44,27 +44,6 @@ def discoverBai(String bamPath) {
     error "BAI index not found for ${bamPath}. Searched:\n  - ${bamPath}.bai\n  - ${bai2}"
 }
 
-/*
-========================================================================================
-    HELPER: Resolve TabPFN model artifact from models.tsv manifest
-========================================================================================
-*/
-
-def resolveTabpfnModel(preset, projDir) {
-    def tsv = file("${projDir}/../src/stride/models/tabpfn/models.tsv")
-    if (!tsv.exists()) return null
-    def targetId = (preset ?: "ao_top1").trim().toLowerCase()
-    def rows = tsv.splitCsv(sep: '\t', header: true)
-    def match = rows.find { row ->
-        def rowId = row.model_id ? row.model_id.toString().trim().toLowerCase() : ''
-        def rowCombo = row.combo_name ? row.combo_name.toString().trim().toLowerCase() : ''
-        def rowJoblib = row.artifact_relpath ? file(row.artifact_relpath).name.toLowerCase() : ''
-        return (rowId == targetId || rowCombo == targetId || rowJoblib == targetId)
-    }
-    def artifact = match ? file("${projDir}/../src/stride/models/tabpfn/${match.artifact_relpath}") : null
-    return artifact?.exists() ? artifact : null
-}
-
 def resolveInputFile(configuredPath, fallbackPaths) {
     if (configuredPath) return file(configuredPath, checkIfExists: true)
 
@@ -154,12 +133,10 @@ workflow {
     def defaultModels = []
 
     if (modelType.contains('tabpfn')) {
-        def defaultPreset = modelType.contains('impact') ? 'ai_top1' : 'ao_top1'
-        def preset = params.tabpfn_model ?: defaultPreset
-        def presetModel = resolveTabpfnModel(preset, projectDir)
-        if (presetModel) defaultModels << presetModel
-
-        defaultModels << file("${projectDir}/../src/stride/models/tabpfn/tabpfn_finetuned.joblib")
+        // TabPFN preset model files are not bundled — the model must be passed explicitly
+        if (!params.model_joblib) {
+            error "--model_joblib is required for --model ${params.model}: pass the path to the TabPFN model .joblib (e.g. SPECIAL_k2__ed__te_0.6975.joblib for preset ao_top1; see `stride models`)"
+        }
     } else {
         defaultModels << file("${projectDir}/../src/stride/models/svm/msi_sgd_v1.joblib")
         defaultModels << file("${projectDir}/../src/stride/models/msi_sgd_v1.joblib")

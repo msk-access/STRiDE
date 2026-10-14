@@ -1,3 +1,4 @@
+import logging
 import pickle
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -9,6 +10,8 @@ import pandas as pd
 from stride.core.base import BasePredictor
 from stride.core.dataset import process_single_sample
 from stride.utils.torch_patches import apply_cpu_patches, force_cpu, setup_tabpfn_shims
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TABPFN_DIR = Path(__file__).parent
 
@@ -37,8 +40,7 @@ class TabPFNPredictor(BasePredictor):
         )
 
         self.model_info = model_info
-        if model_path is None:
-            model_path = resolved_model_path
+        model_path = resolved_model_path
 
         # Resolve variant directory if variant is specified
         variant_dir = DEFAULT_TABPFN_DIR
@@ -64,6 +66,13 @@ class TabPFNPredictor(BasePredictor):
             apply_cpu_patches()
 
         self._load_components()
+
+        # Explicit --threshold, else manifest/filename, else a "threshold" key in the joblib
+        if self.threshold is None:
+            raise ValueError(
+                f"No calibrated threshold known for model file {self.model_path.name}. "
+                "Pass it explicitly with --threshold."
+            )
 
     def _load_components(self):
         import traceback
@@ -295,6 +304,7 @@ class TabPFNPredictor(BasePredictor):
                 res = self.predict_sample(path)
                 results.append(res)
             except Exception as e:
+                logger.exception("Prediction failed for %s", path)
                 results.append(
                     {
                         "sample_id": path.stem,

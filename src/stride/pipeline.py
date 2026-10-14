@@ -18,7 +18,11 @@ import pandas as pd
 
 from .feature_generator import MSIProfileGenerator
 from .models import get_predictor
-from .predictor import predict_from_feature_tsvs, write_one_output_per_sample
+from .predictor import (
+    predict_from_feature_tsvs,
+    raise_on_failed_predictions,
+    write_one_output_per_sample,
+)
 from .qc import generate_report, is_qc_available
 from .utils import read_samples_list, safe_name, strip_ext
 
@@ -122,6 +126,7 @@ def run_end_to_end_single(
             threshold=threshold,
         )
         res_df = predictor.predict_batch([feat_tsv])
+        raise_on_failed_predictions(res_df)
         pred_label = res_df.iloc[0].get("prediction", "MSS") if not res_df.empty else "MSS"
         p_score = res_df.iloc[0].get("p_msi", 0.0) if not res_df.empty else 0.0
         calibrated_threshold = float(getattr(predictor, "threshold", threshold or 0.50))
@@ -288,6 +293,7 @@ def run_end_to_end_batch(
             threshold=threshold,
         )
         res_df = predictor.predict_batch(feature_tsvs)
+        raise_on_failed_predictions(res_df)
         calibrated_threshold = float(getattr(predictor, "threshold", threshold or 0.50))
         df_preds = pd.DataFrame(
             {

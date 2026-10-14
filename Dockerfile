@@ -37,6 +37,8 @@ RUN pip install --no-cache-dir "/build[all]" && rm -rf /build
 # numba (via shapiq -> galois) needs a writable cache dir; site-packages is
 # read-only when this image runs under Singularity
 ENV NUMBA_CACHE_DIR=/tmp/numba_cache
+# matplotlib likewise needs a writable config dir; $HOME is read-only under Singularity
+ENV MPLCONFIGDIR=/tmp/matplotlib
 
 # Verify installation
 RUN stride --version

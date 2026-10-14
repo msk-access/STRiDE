@@ -39,7 +39,6 @@ process STRIDE_QC {
     // Explainability flag
     def explain_flag = params.explain ? '--explain' : '--no-explain'
 
-    def tabpfn_arg = (params.model.toString().toLowerCase().contains('tabpfn') && params.tabpfn_model) ? "--tabpfn-model '${params.tabpfn_model}'" : ''
     def thresh_arg = params.threshold ? "--threshold ${params.threshold}" : ''
     def model_arg  = (params.model_joblib && params.model_joblib.toString() != 'NO_FILE') ? "--model-joblib ${params.model_joblib}" : ''
 
@@ -53,7 +52,6 @@ process STRIDE_QC {
 
     stride qc \\
         --model ${params.model} \\
-        ${tabpfn_arg} \\
         ${thresh_arg} \\
         ${model_arg} \\
         --feature-tsv ${features_tsv} \\

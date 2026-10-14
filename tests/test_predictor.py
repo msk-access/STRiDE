@@ -7,6 +7,7 @@ import pandas as pd
 from stride.predictor import (
     extract_all_features_from_tsv,
     map_msi_label,
+    raise_on_failed_predictions,
     write_one_output_per_sample,
 )
 
@@ -146,22 +147,94 @@ class TestGetPredictorFactory:
 
         from stride.models import get_predictor
 
+        model_file = "/models/SPECIAL_k2__ed__te_0.6975.joblib"
         try:
             from stride.models.tabpfn.predictor import TabPFNPredictor
 
             # Mock _load_components so we don't require heavy torch/tabpfn weights in fast unit test
             monkeypatch.setattr(TabPFNPredictor, "_load_components", lambda self: None)
 
-            pred_default = get_predictor("tabpfn")
+            pred_default = get_predictor("tabpfn", model_path=model_file)
             assert isinstance(pred_default, TabPFNPredictor)
+            assert pred_default.threshold == 0.6975
 
-            pred_acc = get_predictor("tabpfn_access_only")
+            pred_acc = get_predictor("tabpfn_access_only", model_path=model_file)
             assert isinstance(pred_acc, TabPFNPredictor)
             assert pred_acc.variant == "access_only"
 
-            pred_imp = get_predictor("tabpfn_access_impact")
+            pred_imp = get_predictor("tabpfn_access_impact", model_path=model_file)
             assert isinstance(pred_imp, TabPFNPredictor)
             assert pred_imp.variant == "access_impact"
         except ImportError:
             with pytest.raises(ImportError, match="TabPFN"):
-                get_predictor("tabpfn")
+                get_predictor("tabpfn", model_path=model_file)
+
+    def test_tabpfn_predictor_requires_threshold(self, monkeypatch):
+        import pytest
+
+        predictor_mod = pytest.importorskip("stride.models.tabpfn.predictor")
+        monkeypatch.setattr(predictor_mod.TabPFNPredictor, "_load_components", lambda self: None)
+
+        with pytest.raises(ValueError, match="--threshold"):
+            predictor_mod.TabPFNPredictor(model_path="/models/my_model.joblib")
+
+        pred = predictor_mod.TabPFNPredictor(model_path="/models/my_model.joblib", threshold=0.6)
+        assert pred.threshold == 0.6
+
+
+# ---------------------------------------------------------------------------
+# TabPFN registry
+# ---------------------------------------------------------------------------
+
+
+class TestTabPFNRegistry:
+    """Verify model-file resolution and calibrated threshold lookup."""
+
+    def test_missing_model_names_expected_file(self):
+        import pytest
+
+        from stride.models.tabpfn.registry import resolve_tabpfn_model
+
+        with pytest.raises(FileNotFoundError, match="SPECIAL_k2__ed__te_0.6975.joblib"):
+            resolve_tabpfn_model("ao_top1", None)
+        with pytest.raises(FileNotFoundError, match="SPECIAL_k3__wd__te__ne_0.6853.joblib"):
+            resolve_tabpfn_model(None, None, cohort="access_impact")
+
+    def test_threshold_from_manifest_filename(self):
+        from stride.models.tabpfn.registry import resolve_tabpfn_model
+
+        path, thr, info = resolve_tabpfn_model(
+            None, "/anywhere/SPECIAL_k3__wd__te__ne_0.6853.joblib"
+        )
+        assert str(path) == "/anywhere/SPECIAL_k3__wd__te__ne_0.6853.joblib"
+        assert thr == 0.6853
+        assert info.model_id == "ai_top1"
+
+    def test_threshold_fallbacks(self):
+        from stride.models.tabpfn.registry import BUNDLED_MODEL_THRESHOLD, resolve_tabpfn_model
+
+        assert resolve_tabpfn_model(None, "/m/tabpfn_finetuned.joblib")[1] == BUNDLED_MODEL_THRESHOLD
+        assert resolve_tabpfn_model(None, "/m/custom_0.42.joblib")[1] == 0.42
+        assert resolve_tabpfn_model(None, "/m/custom.joblib")[1] is None
+
+
+# ---------------------------------------------------------------------------
+# raise_on_failed_predictions
+# ---------------------------------------------------------------------------
+
+
+class TestRaiseOnFailedPredictions:
+    """Verify per-sample prediction failures stop the run."""
+
+    def test_all_succeeded(self):
+        df = pd.DataFrame({"sample_id": ["S1", "S2"], "prediction": ["MSI", "MSS"]})
+        raise_on_failed_predictions(df)
+
+    def test_failure_raises_with_sample_and_message(self):
+        import pytest
+
+        df = pd.DataFrame(
+            {"sample_id": ["S1", "S2"], "prediction": ["MSS", "ERROR: model exploded"]}
+        )
+        with pytest.raises(RuntimeError, match="S2: ERROR: model exploded"):
+            raise_on_failed_predictions(df)

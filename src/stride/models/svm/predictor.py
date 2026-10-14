@@ -1,4 +1,5 @@
 import json
+import logging
 import pickle
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -9,6 +10,8 @@ import pandas as pd
 
 from stride.core.base import BasePredictor
 from stride.core.dataset import process_single_sample
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SVM_DIR = Path(__file__).parent
 
@@ -126,6 +129,7 @@ class SVMPredictor(BasePredictor):
                 res = self.predict_sample(path)
                 results.append(res)
             except Exception as e:
+                logger.exception("Prediction failed for %s", path)
                 results.append(
                     {
                         "sample_id": path.stem,

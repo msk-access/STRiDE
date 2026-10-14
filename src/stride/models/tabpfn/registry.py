@@ -1,14 +1,15 @@
 """TabPFN Model Registry and Manifest Resolver.
 
-Reads `models.tsv` to discover bundled models, calibrated decision boundaries,
-and feature sets. Supports resolution by short alias, combo name, cohort, or path.
+Reads `models.tsv` to look up the calibrated decision boundary and feature set of
+each known TabPFN preset. Preset model files are not bundled with STRiDE: the
+caller always supplies the model file path, and the manifest is matched against
+that file's name to find its calibrated threshold.
 """
 
 from __future__ import annotations
 
 import csv
 import logging
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,10 @@ logger = logging.getLogger(__name__)
 TABPFN_DIR = Path(__file__).parent
 MANIFEST_PATH = TABPFN_DIR / "models.tsv"
 
+# The one model file that does ship inside the package, with its calibrated threshold.
+BUNDLED_MODEL_NAME = "tabpfn_finetuned.joblib"
+BUNDLED_MODEL_THRESHOLD = 0.660658
+
 
 @dataclass
 class TabPFNModelInfo:
@@ -28,12 +33,8 @@ class TabPFNModelInfo:
     combo_name: str
     threshold: float
     features: list[str]
-    artifact_path: Path
+    filename: str
     description: str
-
-    @property
-    def exists(self) -> bool:
-        return self.artifact_path.is_symlink() or self.artifact_path.exists()
 
 
 def load_manifest(manifest_path: Optional[Path] = None) -> list[TabPFNModelInfo]:
@@ -47,8 +48,6 @@ def load_manifest(manifest_path: Optional[Path] = None) -> list[TabPFNModelInfo]
     with open(path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
-            artifact_rel = row.get("artifact_relpath", "").strip()
-            artifact_path = TABPFN_DIR / artifact_rel
             feats = [x.strip() for x in row.get("features", "").split(",") if x.strip()]
             thr = float(row.get("threshold", 0.5))
 
@@ -59,7 +58,7 @@ def load_manifest(manifest_path: Optional[Path] = None) -> list[TabPFNModelInfo]
                 combo_name=row.get("combo_name", "").strip(),
                 threshold=thr,
                 features=feats,
-                artifact_path=artifact_path,
+                filename=row.get("filename", "").strip(),
                 description=row.get("description", "").strip(),
             )
             models.append(info)
@@ -68,7 +67,7 @@ def load_manifest(manifest_path: Optional[Path] = None) -> list[TabPFNModelInfo]
 
 def parse_threshold_from_filename(filename_or_path: str | Path) -> Optional[float]:
     """Extract trailing decision boundary float from filename.
-    
+
     e.g. SPECIAL_k2__ed__te_0.6975.joblib -> 0.6975
     """
     name = Path(filename_or_path).name
@@ -81,54 +80,25 @@ def parse_threshold_from_filename(filename_or_path: str | Path) -> Optional[floa
     return None
 
 
-def resolve_tabpfn_model(
-    model_identifier: Optional[str] = None,
-    custom_path: Optional[str | Path] = None,
+def find_preset(
+    model_identifier: Optional[str],
+    manifest: list[TabPFNModelInfo],
     cohort: Optional[str] = None,
-    manifest_path: Optional[Path] = None,
-) -> tuple[Path, float, Optional[TabPFNModelInfo]]:
-    """Resolve model file path and calibrated decision boundary threshold.
+) -> Optional[TabPFNModelInfo]:
+    """Look up a preset by alias, combo name, or filename.
 
-    Parameters
-    ----------
-    model_identifier : str | None
-        Can be:
-        - short alias: 'ao_top1', 'ao_top2', 'ai_top1', 'ai_top2', etc.
-        - combo name: 'SPECIAL_k2__ed__te', 'SPECIAL_k3__wd__te__ne', etc.
-        - cohort indicator: 'access_only', 'access_impact', 'tabpfn_access_only', 'tabpfn_access_impact'
-        - filename: 'SPECIAL_k2__ed__te_0.6975.joblib'
-    custom_path : str | Path | None
-        Explicit file path to a .joblib model.
-    cohort : str | None
-        Optional cohort filter ('access_only' or 'access_impact') to resolve ambiguous combo names.
-
-    Returns
-    -------
-    tuple[Path, float, TabPFNModelInfo | None]
-        (joblib_path, calibrated_threshold, model_info_or_None)
+    Accepts short aliases ('ao_top1', 'ai_top2'), combo names ('SPECIAL_k2__ed__te'),
+    cohort indicators ('access_only', 'tabpfn_access_impact') and model filenames.
+    An empty identifier means the cohort's top preset ('ai_top1' for access_impact,
+    otherwise 'ao_top1').
     """
-    manifest = load_manifest(manifest_path)
-
-    # 1. If explicit custom path provided
-    if custom_path:
-        p = Path(custom_path)
-        # Check if matches any known manifest model
-        for m in manifest:
-            if m.artifact_path.name == p.name or str(m.artifact_path) == str(p):
-                return m.artifact_path, m.threshold, m
-        # Fallback to regex from filename
-        thr = parse_threshold_from_filename(p)
-        default_thr = thr if thr is not None else 0.5
-        return p, default_thr, None
-
     clean_id = (model_identifier or "").strip().lower()
 
     # Normalize method strings
     if clean_id.startswith("tabpfn_"):
         clean_id = clean_id[len("tabpfn_") :]
     if not clean_id or clean_id == "tabpfn" or clean_id == "default":
-        # Global default: Access-Only Rank 1 (ed + te)
-        clean_id = "ao_top1"
+        clean_id = "ai_top1" if "impact" in (cohort or "").lower() else "ao_top1"
     elif clean_id in ("access_only", "ao"):
         clean_id = "ao_top1"
     elif clean_id in ("access_impact", "ai", "access_plus_impact"):
@@ -137,7 +107,7 @@ def resolve_tabpfn_model(
     # Match by model_id exact
     for m in manifest:
         if m.model_id.lower() == clean_id:
-            return m.artifact_path, m.threshold, m
+            return m
 
     # Match by combo name with optional cohort filter
     norm_cohort = (cohort or "").lower().replace("-", "_")
@@ -145,39 +115,83 @@ def resolve_tabpfn_model(
         if m.combo_name.lower() == clean_id:
             if norm_cohort and norm_cohort not in m.cohort.lower():
                 continue
-            return m.artifact_path, m.threshold, m
+            return m
 
     # Match by joblib filename
+    clean_name = Path(clean_id).name
     for m in manifest:
-        if m.artifact_path.name.lower() == clean_id or m.artifact_path.stem.lower() == clean_id:
-            return m.artifact_path, m.threshold, m
+        if m.filename.lower() in (clean_name, f"{clean_name}.joblib"):
+            return m
 
-    # If clean_id looks like a direct file path on disk
-    if model_identifier and ("/" in model_identifier or model_identifier.endswith(".joblib")):
-        cand_path = Path(model_identifier)
-        if cand_path.is_symlink() or cand_path.exists():
-            thr = parse_threshold_from_filename(cand_path)
-            return cand_path, thr if thr is not None else 0.5, None
+    return None
 
-    # Fallback default: Access-Only Rank 1
-    if manifest:
-        top_model = manifest[0]
-        logger.warning(
-            "Could not resolve model identifier '%s'. Falling back to default %s (%s).",
-            model_identifier,
-            top_model.model_id,
-            top_model.description,
+
+def resolve_tabpfn_model(
+    model_identifier: Optional[str] = None,
+    custom_path: Optional[str | Path] = None,
+    cohort: Optional[str] = None,
+    manifest_path: Optional[Path] = None,
+) -> tuple[Path, Optional[float], Optional[TabPFNModelInfo]]:
+    """Resolve the model file path and its calibrated decision boundary threshold.
+
+    Parameters
+    ----------
+    model_identifier : str | None
+        Preset alias, combo name, cohort indicator or filename (see
+        :func:`find_preset`). Only used to name the expected file when
+        *custom_path* is missing.
+    custom_path : str | Path | None
+        Path to the model .joblib file. Required.
+    cohort : str | None
+        Optional cohort filter ('access_only' or 'access_impact') to resolve ambiguous combo names.
+
+    Returns
+    -------
+    tuple[Path, float | None, TabPFNModelInfo | None]
+        (joblib_path, calibrated_threshold_or_None, model_info_or_None).
+        The threshold comes from the manifest entry matching the file name, else
+        the ``_<float>.joblib`` filename suffix, else None.
+
+    Raises
+    ------
+    FileNotFoundError
+        If *custom_path* is not given.
+    """
+    manifest = load_manifest(manifest_path)
+
+    if not custom_path:
+        preset = find_preset(model_identifier, manifest, cohort)
+        if preset is not None:
+            hint = f" Preset '{preset.model_id}' expects a file named {preset.filename}."
+        else:
+            known = ", ".join(m.model_id for m in manifest)
+            hint = f" Unknown preset '{model_identifier}' (known presets: {known})."
+        raise FileNotFoundError(
+            "No TabPFN model file given. Preset model files are not bundled with STRiDE; "
+            "pass the model path with --model-joblib." + hint
         )
-        return top_model.artifact_path, top_model.threshold, top_model
 
-    # Ultimate fallback if manifest is missing
-    fallback_joblib = TABPFN_DIR / "tabpfn_finetuned.joblib"
-    return fallback_joblib, 0.660658, None
+    p = Path(custom_path)
+    match = next((m for m in manifest if m.filename == p.name), None)
+
+    if model_identifier:
+        requested = find_preset(model_identifier, manifest, cohort)
+        if requested is not None and requested is not match:
+            logger.warning(
+                "--tabpfn-model '%s' does not match model file %s; using the model file.",
+                model_identifier,
+                p.name,
+            )
+
+    if match is not None:
+        return p, match.threshold, match
+    if p.name == BUNDLED_MODEL_NAME:
+        return p, BUNDLED_MODEL_THRESHOLD, None
+    return p, parse_threshold_from_filename(p), None
 
 
 if __name__ == "__main__":
     manifest = load_manifest()
     print(f"Loaded {len(manifest)} models from manifest:")
     for m in manifest:
-        exists_mark = "OK" if m.exists else "MISSING"
-        print(f"  [{m.model_id:<7}] {m.cohort:<13} #{m.rank} | {m.combo_name:<32} | Thr: {m.threshold:.4f} | [{exists_mark}]")
+        print(f"  [{m.model_id:<7}] {m.cohort:<13} #{m.rank} | {m.combo_name:<32} | Thr: {m.threshold:.4f} | {m.filename}")

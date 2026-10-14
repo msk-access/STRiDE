@@ -50,7 +50,7 @@ nextflow run nextflow/main.nf \
     --input samples.csv \
     --outdir results/ \
     --model tabpfn \
-    --tabpfn_model ao_top1
+    --model_joblib /path/to/SPECIAL_k2__ed__te_0.6975.joblib
 ```
 
 ### 3. Run on Slurm Cluster
@@ -60,7 +60,7 @@ nextflow run nextflow/main.nf \
     --input samples.csv \
     --outdir results/ \
     --model tabpfn \
-    --tabpfn_model ao_top1 \
+    --model_joblib /path/to/SPECIAL_k2__ed__te_0.6975.joblib \
     -resume
 ```
 
@@ -70,9 +70,9 @@ nextflow run nextflow/main.nf \
 | `--input` | *Required* | Path to sample sheet CSV (`sample,tumor_bam,normal_bam`) |
 | `--outdir` | `results` | Output directory |
 | `--model` | `tabpfn` | Model architecture: `tabpfn` or `svm` |
-| `--tabpfn_model` | `ao_top1` | Pre-trained model preset (e.g. `ao_top1`, `ai_top1`) |
-| `--threshold` | `auto` | Decision threshold (`auto` resolves calibrated threshold from manifest) |
-| `--qc` | `true` | Generate interactive HTML interpretation dashboards |
+| `--model_joblib` | *Required for TabPFN* | Path to the model `.joblib` (see [TabPFN Model Presets](#tabpfn-model-presets)) |
+| `--threshold` | calibrated | Decision threshold override. By default the calibrated threshold is looked up from the model filename |
+| `--generate_qc` | `true` | Generate interactive HTML interpretation dashboards |
 | `--explain` | `true` | Compute ShapIQ locus attribution and driver loci |
 
 ---
@@ -86,11 +86,10 @@ Extracts features, runs prediction, and generates the interpretation dashboard i
 stride run \
     --tumor-bam  sample_tumor.bam \
     --normal-bam sample_normal.bam \
-    --sample-name SAMPLE_001 \
+    --sample-id SAMPLE_001 \
     --model tabpfn \
-    --tabpfn-model ao_top1 \
-    --threshold auto \
-    --qc \
+    --model-joblib /path/to/SPECIAL_k2__ed__te_0.6975.joblib \
+    --generate-qc \
     --explain \
     --out-dir results/
 ```
@@ -102,9 +101,9 @@ stride run \
   ```
 - **Predict from features**:
   ```bash
-  stride predict --model tabpfn --tabpfn-model ao_top1 --features-dir output/features/ --out-dir output/predictions/
+  stride predict --model tabpfn --model-joblib /path/to/SPECIAL_k2__ed__te_0.6975.joblib --features-dir output/features/ --out-dir output/predictions/
   ```
-- **List registered TabPFN models**:
+- **List TabPFN presets and their model filenames**:
   ```bash
   stride models
   ```
@@ -115,11 +114,17 @@ stride run \
 
 ---
 
-## Bundled TabPFN Models
+## TabPFN Model Presets
+
+Preset model files are **not** bundled with STRiDE. Pass the model file with `--model-joblib`
+(CLI) or `--model_joblib` (Nextflow). The calibrated threshold is looked up by the file's name
+(e.g. `SPECIAL_k2__ed__te_0.6975.joblib` → `ao_top1`, threshold `0.6975`), so keep the original
+filenames. For a file not listed here, the threshold is taken from a `_<threshold>.joblib`
+filename suffix or a `threshold` key saved in the joblib, otherwise pass `--threshold` explicitly.
 
 | Model ID | Cohort | Rank | Features | Calibrated Threshold | Description |
 |:---|:---|:---:|:---|:---:|:---|
-| `ao_top1` *(Default)* | Access-Only | 1 | `entropy_diff, tumor_entropy` (ED + TE) | `0.6975` | Access-Only Top Model |
+| `ao_top1` *(Recommended)* | Access-Only | 1 | `entropy_diff, tumor_entropy` (ED + TE) | `0.6975` | Access-Only Top Model |
 | `ao_top2` | Access-Only | 2 | `tumor_entropy, normal_entropy, n_alleles_diff_norm_6` | `0.5178` | Access-Only Rank 2 |
 | `ao_top3` | Access-Only | 3 | `wasserstein_distance, tumor_entropy, normal_entropy` | `0.7213` | Access-Only Rank 3 |
 | `ao_top4` | Access-Only | 4 | `wasserstein_distance, tumor_entropy` | `0.7213` | Access-Only Rank 4 |
