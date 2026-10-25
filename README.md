@@ -56,7 +56,7 @@ nextflow run nextflow/main.nf \
 ### 3. Run on Slurm Cluster
 ```bash
 nextflow run nextflow/main.nf \
-    -profile slurm \
+    -profile singularity,slurm \
     --input samples.csv \
     --outdir results/ \
     --model tabpfn \

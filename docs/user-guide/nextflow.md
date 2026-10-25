@@ -71,8 +71,9 @@ Select a profile with `-profile <name>`:
 |---------|-----------|----------|----------|
 | `docker` | Docker | Local | Local development, CI |
 | `singularity` | Singularity | Local | HPC without Docker |
-| `slurm` | None unless combined | SLURM (`cmobic_cpu`) | Host-installed STRiDE alone; combine with `singularity` for the container |
+| `slurm` | None unless combined | SLURM (`cmobic_cpu`) | Executor only; combine with `singularity` or `conda` |
 | `slurm_singularity` | Singularity | SLURM (`cmobic_cpu`) | Containerized run on MSKCC HPC |
+| `conda` | None (host Conda env) | — | Uses STRiDE from the Conda env active at submission; combine with `slurm` |
 | `local` | None | Local | `stride` installed locally |
 | `test` | — | — | CI validation (minimal resources) |
 | `debug` | — | — | Prints hostname before each task |
@@ -80,11 +81,11 @@ Select a profile with `-profile <name>`:
 Profiles can be combined:
 
 ```bash
-# SLURM on MSKCC cluster using host-installed STRiDE
+# SLURM on MSKCC cluster using STRiDE from the active Conda env
 nextflow run nextflow/main.nf \
     --input samples.csv \
     --outdir results/ \
-    -profile slurm
+    -profile conda,slurm
 
 # SLURM on MSKCC cluster using the STRiDE Singularity container
 nextflow run nextflow/main.nf \
@@ -211,4 +212,4 @@ nextflow run nextflow/main.nf \
 ```
 
 !!! tip "MSKCC Users"
-    Use `-profile slurm_singularity` to submit to `cmobic_cpu` and run tasks in the Singularity container. The `slurm` profile instead uses STRiDE installed in the host environment.
+    Use `-profile slurm_singularity` to submit to `cmobic_cpu` and run tasks in the Singularity container. Use `-profile conda,slurm` instead to run STRiDE from the Conda env active at submission time.
